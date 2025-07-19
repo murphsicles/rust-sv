@@ -13,6 +13,8 @@ pub enum Error {
     BadArgument(String),
     /// The data given is not valid
     BadData(String),
+    /// BIP-32 specific error
+    Bip32Error(String),
     /// Base58 string could not be decoded
     FromBase58Error(FromBase58Error),
     /// Hex string could not be decoded
@@ -44,6 +46,7 @@ impl std::fmt::Display for Error {
         match self {
             Error::BadArgument(s) => f.write_str(&format!("Bad argument: {}", s)),
             Error::BadData(s) => f.write_str(&format!("Bad data: {}", s)),
+            Error::Bip32Error(s) => f.write_str(&format!("BIP-32 error: {}", s)),
             Error::FromBase58Error(e) => f.write_str(&format!("Base58 decoding error: {:?}", e)), // Changed {} to {:?}
             Error::FromHexError(e) => f.write_str(&format!("Hex decoding error: {}", e)),
             Error::FromUtf8Error(e) => f.write_str(&format!("Utf8 parsing error: {}", e)),

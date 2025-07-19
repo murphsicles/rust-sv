@@ -137,7 +137,7 @@ mod tests {
     fn standard_p2pkh_test(sighash_type: u8) {
         let secp = Secp256k1::new();
         let private_key = [1; 32];
-        let secret_key = SecretKey::from_slice(&private_key).unwrap();
+        let secret_key = SecretKey::from_byte_array(private_key).unwrap();
         let pk = PublicKey::from_secret_key(&secp, &secret_key).serialize();
         let pkh = hash160(&pk);
 
@@ -209,9 +209,9 @@ mod tests {
         let private_key1 = [1; 32];
         let private_key2 = [2; 32];
         let private_key3 = [3; 32];
-        let secret_key1 = SecretKey::from_slice(&private_key1).unwrap();
-        let secret_key2 = SecretKey::from_slice(&private_key2).unwrap();
-        let secret_key3 = SecretKey::from_slice(&private_key3).unwrap();
+        let secret_key1 = SecretKey::from_byte_array(private_key1).unwrap();
+        let secret_key2 = SecretKey::from_byte_array(private_key2).unwrap();
+        let secret_key3 = SecretKey::from_byte_array(private_key3).unwrap();
         let pk1 = PublicKey::from_secret_key(&secp, &secret_key1).serialize();
         let pk2 = PublicKey::from_secret_key(&secp, &secret_key2).serialize();
         let pk3 = PublicKey::from_secret_key(&secp, &secret_key3).serialize();
@@ -286,12 +286,12 @@ mod tests {
         let secp = Secp256k1::new();
 
         let private_key1 = [1; 32];
-        let secret_key1 = SecretKey::from_slice(&private_key1).unwrap();
+        let secret_key1 = SecretKey::from_byte_array(private_key1).unwrap();
         let pk1 = PublicKey::from_secret_key(&secp, &secret_key1).serialize();
         let pkh1 = hash160(&pk1);
 
         let private_key2 = [2; 32];
-        let secret_key2 = SecretKey::from_slice(&private_key2).unwrap();
+        let secret_key2 = SecretKey::from_byte_array(private_key2).unwrap();
         let pk2 = PublicKey::from_secret_key(&secp, &secret_key2).serialize();
         let pkh2 = hash160(&pk2);
 
@@ -414,12 +414,12 @@ mod tests {
         let secp = Secp256k1::new();
 
         let private_key1 = [1; 32];
-        let secret_key1 = SecretKey::from_slice(&private_key1).unwrap();
+        let secret_key1 = SecretKey::from_byte_array(private_key1).unwrap();
         let pk1 = PublicKey::from_secret_key(&secp, &secret_key1).serialize();
         let pkh1 = hash160(&pk1);
 
         let private_key2 = [2; 32];
-        let secret_key2 = SecretKey::from_slice(&private_key2).unwrap();
+        let secret_key2 = SecretKey::from_byte_array(private_key2).unwrap();
         let pk2 = PublicKey::from_secret_key(&secp, &secret_key2).serialize();
         let pkh2 = hash160(&pk2);
 

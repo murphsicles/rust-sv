@@ -12,7 +12,6 @@ extern crate ring;
 extern crate secp256k1;
 extern crate snowflake;
 
-pub mod address;
 pub mod messages;
 pub mod network;
 pub mod peer;

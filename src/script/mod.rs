@@ -5,8 +5,8 @@
 //! Evaluate a script that divides two numbers:
 //!
 //! ```rust
-//! use sv::script::op_codes::*;
-//! use sv::script::{Script, TransactionlessChecker, NO_FLAGS};
+//! use rustsv::script::op_codes::*;
+//! use rustsv::script::{Script, TransactionlessChecker, NO_FLAGS};
 //!
 //! let mut script = Script::new();
 //! script.append(OP_10);

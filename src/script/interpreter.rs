@@ -1497,9 +1497,9 @@ mod tests {
 
     #[test]
     fn remove_sig_tests() {
-        assert!(remove_sig(&[], &[]) == vec![]);
+        assert!(remove_sig(&[], &[]) == vec![] as Vec<u8>);
         assert!(remove_sig(&[], &[OP_0]) == vec![OP_0]);
-        assert!(remove_sig(&[OP_0], &[OP_0]) == vec![]);
+        assert!(remove_sig(&[OP_0], &[OP_0]) == vec![] as Vec<u8>);
         let v = [OP_0, OP_1, OP_2, OP_3, OP_4, OP_0, OP_1, OP_2, OP_3, OP_4];
         assert!(remove_sig(&[OP_2, OP_3], &v) == vec![OP_0, OP_1, OP_4, OP_0, OP_1, OP_4]);
     }

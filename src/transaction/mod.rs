@@ -5,11 +5,11 @@
 //! Sign a transaction:
 //!
 //! ```rust
-//! use sv::messages::{Tx, TxIn};
-//! use sv::transaction::generate_signature;
-//! use sv::transaction::p2pkh::{create_lock_script, create_unlock_script};
-//! use sv::transaction::sighash::{sighash, SigHashCache, SIGHASH_FORKID, SIGHASH_NONE};
-//! use sv::util::{hash160};
+//! use rustsv::messages::{Tx, TxIn};
+//! use rustsv::transaction::generate_signature;
+//! use rustsv::transaction::p2pkh::{create_lock_script, create_unlock_script};
+//! use rustsv::transaction::sighash::{sighash, SigHashCache, SIGHASH_FORKID, SIGHASH_NONE};
+//! use rustsv::util::{hash160};
 //!
 //! // Use real values here
 //! let mut tx = Tx {
@@ -42,7 +42,7 @@ pub fn generate_signature(
 ) -> Result<Vec<u8>> {
     let secp = Secp256k1::signing_only();
     let message = Message::from_digest(sighash.0);
-    let secret_key = SecretKey::from_slice(private_key)?;
+    let secret_key = SecretKey::from_byte_array(*private_key)?;
     let mut signature: Signature = secp.sign_ecdsa(message, &secret_key); // Fixed: removed & from message
     signature.normalize_s();
     let sig: SerializedSignature = signature.serialize_der();

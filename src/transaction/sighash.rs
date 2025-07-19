@@ -252,7 +252,7 @@ fn legacy_sighash(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::address::decode_address;
+    use crate::wallet::adressing::decode_address;
     use crate::messages::{OutPoint, TxIn};
     use crate::transaction::p2pkh;
     use hex;

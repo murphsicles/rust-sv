@@ -165,9 +165,9 @@ mod tests {
     #[test]
     fn lshift_test() {
         // Empty array
-        assert!(lshift(&[], 0) == vec![]);
-        assert!(lshift(&[], 1) == vec![]);
-        assert!(lshift(&[], 999999) == vec![]);
+        assert!(lshift(&[], 0) == vec![] as Vec<u8>);
+        assert!(lshift(&[], 1) == vec![] as Vec<u8>);
+        assert!(lshift(&[], 999999) == vec![] as Vec<u8>);
 
         // No shifts
         assert!(lshift(&[0x80, 0x10, 0x30, 0x55], 0) == vec![0x80, 0x10, 0x30, 0x55]);
@@ -187,9 +187,9 @@ mod tests {
     #[test]
     fn rshift_test() {
         // Empty array
-        assert!(rshift(&[], 0) == vec![]);
-        assert!(rshift(&[], 1) == vec![]);
-        assert!(rshift(&[], 999999) == vec![]);
+        assert!(lshift(&[], 0) == vec![] as Vec<u8>);
+        assert!(lshift(&[], 1) == vec![] as Vec<u8>);
+        assert!(lshift(&[], 999999) == vec![] as Vec<u8>);
 
         // No shifts
         assert!(rshift(&[0x80, 0x10, 0x30, 0x55], 0) == vec![0x80, 0x10, 0x30, 0x55]);

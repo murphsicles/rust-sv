@@ -5,8 +5,8 @@
 //! Decode a network message
 //!
 //! ```rust
-//! use sv::messages::Message;
-//! use sv::network::NetworkConfig;
+//! use rustsv::messages::Message;
+//! use rustsv::network::NetworkConfig;
 //! use std::io::Cursor;
 //!
 //! let bytes = [
@@ -25,9 +25,9 @@
 //! Construct a transaction:
 //!
 //! ```rust
-//! use sv::messages::{OutPoint, Tx, TxIn, TxOut};
-//! use sv::transaction::p2pkh::{create_lock_script, create_unlock_script};
-//! use sv::util::{hash160, Hash256};
+//! use rustsv::messages::{OutPoint, Tx, TxIn, TxOut};
+//! use rustsv::transaction::p2pkh::{create_lock_script, create_unlock_script};
+//! use rustsv::util::{hash160, Hash256};
 //!
 //! // Use real values here
 //! let signature = [0; 72];

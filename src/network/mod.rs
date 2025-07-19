@@ -5,7 +5,7 @@
 //! Iterate through seed nodes:
 //!
 //! ```no_run, rust
-//! use sv::network::NetworkConfig;
+//! use rustsv::network::NetworkConfig;
 //!
 //! let network = NetworkConfig::new(0).unwrap(); // Mainnet
 //! for (ip, port) in network.seed_iter() {

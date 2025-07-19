@@ -3,7 +3,7 @@
 use std::time::SystemTime;
 
 #[allow(dead_code)]
-mod bits;
+pub(crate) mod bits;
 mod bloom_filter;
 #[allow(dead_code)]
 mod future;
@@ -45,3 +45,5 @@ pub const GENESIS_UPGRADE_HEIGHT_MAINNET: i32 = 620538;
 
 /// Block height that activated the genesis upgrade on testnet
 pub const GENESIS_UPGRADE_HEIGHT_TESTNET: i32 = 1344302;
+
+pub const HARDENED_KEY_OFFSET: u32 = 0x80000000;

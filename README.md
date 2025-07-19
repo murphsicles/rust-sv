@@ -24,7 +24,7 @@ Add `rust-sv` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-sv = "0.4.1"
+rustsv = "0.4.2"
 ```
 
 Or use the latest development version:
@@ -51,9 +51,9 @@ sudo apt-get update && sudo apt-get install -y libzmq3-dev
 ### Encode a Base58 Address
 
 ```rust
-use sv::address::{addr_encode, AddressType};
-use sv::network::Network;
-use sv::util::hash160;
+use rustsv::wallet::adressing::{addr_encode, AddressType};
+use rustsv::network::Network;
+use rustsv::util::hash160;
 
 let pubkeyhash = hash160(&[0; 33]);
 let addr = addr_encode(&pubkeyhash, AddressType::P2PKH, Network::Mainnet);
@@ -63,8 +63,8 @@ println!("Address: {}", addr);
 ### Decode a Base58 Address
 
 ```rust
-use sv::address::addr_decode;
-use sv::network::Network;
+use rustsv::wallet::adressing::addr_decode;
+use rustsv::network::Network;
 
 let addr = "15wpV72HRpAFPMmosR3jvGq7axU7t6ghX5";
 let (pubkeyhash, addr_type) = addr_decode(&addr, Network::Mainnet).unwrap();
@@ -75,8 +75,8 @@ println!("Address Type: {:?}", addr_type);
 ### Connect to a Bitcoin SV Node
 
 ```rust
-use sv::network::Network;
-use sv::node::Node;
+use rustsv::network::Network;
+use rustsv::node::Node;
 use async_std::net::TcpStream;
 
 #[tokio::main]
