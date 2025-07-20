@@ -41,7 +41,7 @@ mod tests {
 
     #[test]
     fn read_bytes() {
-        let b = hex::decode("e803000000000000".as_bytes()).unwrap();
+        let b = hex::decode("e803000000000000").unwrap();
         let f = FeeFilter::read(&mut Cursor::new(&b)).unwrap();
         assert!(f.minfee == 1000);
     }
