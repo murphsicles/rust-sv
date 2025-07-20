@@ -1,5 +1,6 @@
 use crate::util::Result;
 use std::io;
+
 use std::io::{Read, Write};
 
 /// An object that may be serialized and deserialized
