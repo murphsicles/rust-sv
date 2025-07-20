@@ -1,17 +1,19 @@
-use ring::digest::{digest, SHA256};
-use ripemd::{Ripemd160, Digest};
-use std::convert::AsRef;
+use sha2::{Sha256, Digest as ShaDigest};
+use ripemd::{Ripemd160, Digest as RipemdDigest};
 use std::fmt;
+use zeroize::Zeroize;
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Hash160(pub [u8; 20]);
 
 pub fn hash160(data: &[u8]) -> Hash160 {
-    let sha256 = digest(&SHA256, data);
-    let mut ripemd160 = Ripemd160::new();
-    ripemd160.update(AsRef::<[u8]>::as_ref(&sha256.as_ref()));
+    if data.len() > 520 { // BSV script max
+        panic!("Input too large for hash160");
+    }
+    let sha = Sha256::digest(data);
+    let ripemd = Ripemd160::digest(sha);
     let mut hash160 = [0; 20];
-    hash160.copy_from_slice(&ripemd160.finalize());
+    hash160.copy_from_slice(&ripemd);
     Hash160(hash160)
 }
 
@@ -24,6 +26,18 @@ impl From<[u8; 20]> for Hash160 {
 impl fmt::Debug for Hash160 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", hex::encode(self.0))
+    }
+}
+
+impl Zeroize for Hash160 {
+    fn zeroize(&mut self) {
+        self.0.zeroize();
+    }
+}
+
+impl Drop for Hash160 {
+    fn drop(&mut self) {
+        self.zeroize();
     }
 }
 
@@ -44,5 +58,12 @@ mod tests {
         let bytes = [0u8; 20];
         let hash160: Hash160 = bytes.into();
         assert_eq!(hash160.0, bytes);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_large_input() {
+        let data = vec![0u8; 521];
+        hash160(&data);
     }
 }
