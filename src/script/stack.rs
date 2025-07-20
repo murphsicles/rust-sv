@@ -1,6 +1,10 @@
 use crate::util::{Error, Result};
 use num_bigint::{BigInt, Sign};
 use num_traits::Zero;
+use subtle::ConstantTimeEq;
+
+/// Max length for bigint in bytes (BSV script max 520)
+const MAX_BIGINT_BYTES: usize = 520;
 
 /// Pops a bool off the stack
 #[inline]
@@ -43,6 +47,10 @@ pub fn pop_bigint(stack: &mut Vec<Vec<u8>>) -> Result<BigInt> {
         return Err(Error::ScriptError(msg));
     }
     let mut top = stack.pop().unwrap();
+    if top.len() > MAX_BIGINT_BYTES {
+        let msg = format!("Bigint too large: {} bytes", top.len());
+        return Err(Error::ScriptError(msg));
+    }
     Ok(decode_bigint(&mut top))
 }
 
@@ -144,6 +152,9 @@ pub fn decode_bigint(s: &mut [u8]) -> BigInt {
 #[inline]
 pub fn encode_bigint(val: BigInt) -> Vec<u8> {
     let mut result = val.to_bytes_le();
+    if result.1.len() > MAX_BIGINT_BYTES {
+        panic!("Bigint too large for stack");
+    }
     if result.1[result.1.len() - 1] & 0x80 == 0x80 {
         result.1.push(match result.0 {
             Sign::Plus | Sign::NoSign => 0x00,
@@ -213,5 +224,12 @@ mod tests {
         assert!(pop_num(&mut vec![vec![129]]).unwrap() == -1);
         assert!(pop_num(&mut vec![vec![0, 0, 0, 0]]).unwrap() == 0);
         assert!(pop_num(&mut vec![vec![0, 0, 0, 0, 0]]).is_err());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_large_bigint() {
+        let mut stack = vec![vec![0u8; MAX_BIGINT_BYTES + 1]];
+        pop_bigint(&mut stack).unwrap();
     }
 }
