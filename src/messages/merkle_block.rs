@@ -26,12 +26,21 @@ impl MerkleBlock {
         if self.total_transactions == 0 {
             return Err(Error::BadData("No transactions".to_string()));
         }
+        if self.total_transactions > 10_000_000_000 { // BSV default cap inference
+            return Err(Error::BadData("Too many transactions".to_string()));
+        }
+        if self.hashes.len() > self.total_transactions as usize {
+            return Err(Error::BadData("Too many hashes".to_string()));
+        }
+        if self.flags.len() > self.total_transactions as usize / 8 + 1 {
+            return Err(Error::BadData("Too many flags".to_string()));
+        }
 
         let mut preorder_node = 0;
         let mut flag_bits_used = 0;
         let mut hashes_used = 0;
         let mut matches = Vec::new();
-        let tree_depth = (self.total_transactions as f32).log(2.).ceil() as usize;
+        let tree_depth = (self.total_transactions as f32).log2().ceil() as usize;
         let mut row_len = self.total_transactions as usize;
         let mut total_nodes = row_len as usize;
         while row_len > 1 {
@@ -100,7 +109,7 @@ impl MerkleBlock {
                 matches,
             )?;
             if *preorder_node >= total_nodes {
-                let mut concat = Vec::with_capacity(64);
+                let mut concat = SmallVec::<[u8; 64]>::new();
                 concat.extend_from_slice(&left.0);
                 concat.extend_from_slice(&left.0);
                 Ok(sha256d(&concat))
@@ -114,10 +123,10 @@ impl MerkleBlock {
                     total_nodes,
                     matches,
                 )?;
-                if left == right {
+                if left.0.ct_eq(&right.0).into() {
                     return Err(Error::BadData("Duplicate transactions".to_string()));
                 } else {
-                    let mut concat = Vec::with_capacity(64);
+                    let mut concat = SmallVec::<[u8; 64]>::new();
                     concat.extend_from_slice(&left.0);
                     concat.extend_from_slice(&right.0);
                     Ok(sha256d(&concat))
@@ -149,13 +158,19 @@ impl Serializable<MerkleBlock> for MerkleBlock {
     fn read(reader: &mut dyn Read) -> Result<MerkleBlock> {
         let header = BlockHeader::read(reader)?;
         let total_transactions = reader.read_u32::<LittleEndian>()?;
-        let num_hashes = var_int::read(reader)?;
-        let mut hashes = Vec::with_capacity(num_hashes as usize);
+        let num_hashes = var_int::read(reader)? as usize;
+        if num_hashes > total_transactions as usize {
+            return Err(Error::BadData("Too many hashes".to_string()));
+        }
+        let mut hashes = Vec::with_capacity(num_hashes);
         for _i in 0..num_hashes {
             hashes.push(Hash256::read(reader)?);
         }
-        let flags_len = var_int::read(reader)?;
-        let mut flags = vec![0; flags_len as usize];
+        let flags_len = var_int::read(reader)? as usize;
+        if flags_len > (total_transactions as usize / 8 + 1) {
+            return Err(Error::BadData("Too many flags".to_string()));
+        }
+        let mut flags = vec![0; flags_len];
         reader.read(&mut flags)?;
         Ok(MerkleBlock {
             header,
@@ -208,14 +223,14 @@ mod tests {
 
     #[test]
     fn read_bytes() {
-        let b = hex::decode("0100000082bb869cf3a793432a66e826e05a6fc37469f8efb7421dc880670100000000007f16c5962e8bd963659c793ce370d95f093bc7e367117b3c30c1f8fdd0d9728776381b4d4c86041b554b852907000000043612262624047ee87660be1a707519a443b1c1ce3d248cbfc6c15870f6c5daa2019f5b01d4195ecbc9398fbf3c3b1fa9bb3183301d7a1fb3bd174fcfa40a2b6541ed70551dd7e841883ab8f0b16bf04176b7d1480e4f0af9f3d4c3595768d06820d2a7bc994987302e5b1ac80fc425fe25f8b63169ea78e68fbaaefa59379bbf011d".as_bytes()).unwrap();
+        let b = hex::decode("0100000082bb869cf3a793432a66e826e05a6fc37469f8efb7421dc880670100000000007f16c5962e8bd963659c793ce370d95f093bc7e367117b3c30c1f8fdd0d9728776381b4d4c86041b554b852907000000043612262624047ee87660be1a707519a443b1c1ce3d248cbfc6c15870f6c5daa2019f5b01d4195ecbc9398fbf3c3b1fa9bb3183301d7a1fb3bd174fcfa40a2b6541ed70551dd7e841883ab8f0b16bf04176b7d1480e4f0af9f3d4c3595768d06820d2a7bc994987302e5b1ac80fc425fe25f8b63169ea78e68fbaaefa59379bbf011d").unwrap();
         let p = MerkleBlock::read(&mut Cursor::new(&b)).unwrap();
         assert!(p.header.version == 1);
         let prev_hash = "82bb869cf3a793432a66e826e05a6fc37469f8efb7421dc88067010000000000";
         assert!(p.header.prev_hash.0.to_vec() == hex::decode(prev_hash).unwrap());
         let merkle_root = "7f16c5962e8bd963659c793ce370d95f093bc7e367117b3c30c1f8fdd0d97287";
         assert!(p.header.merkle_root.0.to_vec() == hex::decode(merkle_root).unwrap());
-        assert!(p.header.timestamp == 1293629558);
+        assert!(p.header.timestamp == 1231469744);
         assert!(p.total_transactions == 7);
         assert!(p.hashes.len() == 4);
         let hash1 = "3612262624047ee87660be1a707519a443b1c1ce3d248cbfc6c15870f6c5daa2";
@@ -235,14 +250,10 @@ mod tests {
         let p = MerkleBlock {
             header: BlockHeader {
                 version: 12345,
-                prev_hash: Hash256::decode(
-                    "7766009988776600998877660099887766009988776600998877660099887766",
-                )
-                .unwrap(),
-                merkle_root: Hash256::decode(
-                    "2211554433221155443322115544332211554433221155443322115544332211",
-                )
-                .unwrap(),
+                prev_hash: Hash256::decode("7766009988776600998877660099887766009988776600998877660099887766")
+                    .unwrap(),
+                merkle_root: Hash256::decode("2211554433221155443322115544332211554433221155443322115544332211")
+                    .unwrap(),
                 timestamp: 66,
                 bits: 4488,
                 nonce: 9999,
@@ -259,7 +270,7 @@ mod tests {
     #[test]
     fn validate() {
         // Valid merkle block with 7 transactions
-        let b = hex::decode("0100000082bb869cf3a793432a66e826e05a6fc37469f8efb7421dc880670100000000007f16c5962e8bd963659c793ce370d95f093bc7e367117b3c30c1f8fdd0d9728776381b4d4c86041b554b852907000000043612262624047ee87660be1a707519a443b1c1ce3d248cbfc6c15870f6c5daa2019f5b01d4195ecbc9398fbf3c3b1fa9bb3183301d7a1fb3bd174fcfa40a2b6541ed70551dd7e841883ab8f0b16bf04176b7d1480e4f0af9f3d4c3595768d06820d2a7bc994987302e5b1ac80fc425fe25f8b63169ea78e68fbaaefa59379bbf011d".as_bytes()).unwrap();
+        let b = hex::decode("0100000082bb869cf3a793432a66e826e05a6fc37469f8efb7421dc880670100000000007f16c5962e8bd963659c793ce370d95f093bc7e367117b3c30c1f8fdd0d9728776381b4d4c86041b554b852907000000043612262624047ee87660be1a707519a443b1c1ce3d248cbfc6c15870f6c5daa2019f5b01d4195ecbc9398fbf3c3b1fa9bb3183301d7a1fb3bd174fcfa40a2b6541ed70551dd7e841883ab8f0b16bf04176b7d1480e4f0af9f3d4c3595768d06820d2a7bc994987302e5b1ac80fc425fe25f8b63169ea78e68fbaaefa59379bbf011d").unwrap();
         let p = MerkleBlock::read(&mut Cursor::new(&b)).unwrap();
         assert!(p.validate().unwrap().len() == 1);
 
@@ -316,8 +327,8 @@ mod tests {
 
     fn hash(a: &Hash256, b: &Hash256) -> Hash256 {
         let mut v = Vec::with_capacity(64);
-        v.write(&a.0).unwrap();
-        v.write(&b.0).unwrap();
+        v.extend_from_slice(&a.0);
+        v.extend_from_slice(&b.0);
         sha256d(&v)
     }
-}
+                               }
