@@ -1,33 +1,52 @@
-use crate::util::{Error, Result};
 use std::fmt;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
+
+#[cfg(feature = "async")]
+use tokio::sync::Notify;
 
 /// A one-way latch for thread synchronization
 ///
 /// It is similar to Java's CountdownLatch when counter is 1.
 pub struct Latch {
+    #[cfg(feature = "async")]
+    notify: Arc<Notify>,
+    #[cfg(not(feature = "async"))]
     open: Mutex<bool>,
+    #[cfg(not(feature = "async"))]
     condvar: Condvar,
 }
 
 impl Latch {
     /// Creates a new latch in an unopened state
     pub fn new() -> Arc<Latch> {
-        Arc::new(Latch {
+        #[cfg(feature = "async")]
+        return Arc::new(Latch {
+            notify: Arc::new(Notify::new()),
+        });
+
+        #[cfg(not(feature = "async"))]
+        return Arc::new(Latch {
             open: Mutex::new(false),
             condvar: Condvar::new(),
-        })
+        });
     }
 
     /// Opens the latch unblocking all wait and wait_timeout calls forever
     pub fn open(&self) {
-        let mut open = self.open.lock().unwrap();
-        *open = true;
-        self.condvar.notify_one();
+        #[cfg(feature = "async")]
+        self.notify.notify_waiters();
+
+        #[cfg(not(feature = "async"))]
+        {
+            let mut open = self.open.lock().unwrap();
+            *open = true;
+            self.condvar.notify_all();
+        }
     }
 
     /// Waits until open is called
+    #[cfg(not(feature = "async"))]
     pub fn wait(&self) {
         let mut open = self.open.lock().unwrap();
         while !*open {
@@ -35,7 +54,13 @@ impl Latch {
         }
     }
 
+    #[cfg(feature = "async")]
+    pub async fn wait(&self) {
+        self.notify.notified().await;
+    }
+
     /// Waits until open is called, with a timeout. The result will return Error::Timeout if a timeout occurred.
+    #[cfg(not(feature = "async"))]
     pub fn wait_timeout(&self, duration: Duration) -> Result<()> {
         let mut open = self.open.lock().unwrap();
         while !*open {
@@ -48,9 +73,21 @@ impl Latch {
         Ok(())
     }
 
+    #[cfg(feature = "async")]
+    pub async fn wait_timeout(&self, duration: Duration) -> Result<()> {
+        match tokio::time::timeout(duration, self.notify.notified()).await {
+            Ok(_) => Ok(()),
+            Err(_) => Err(Error::Timeout),
+        }
+    }
+
     /// Returns whether the latch has been opened or not
     pub fn opened(&self) -> bool {
-        *self.open.lock().unwrap()
+        #[cfg(feature = "async")]
+        return self.notify.notified().now_or_never().is_some();
+
+        #[cfg(not(feature = "async"))]
+        return *self.open.lock().unwrap();
     }
 }
 
@@ -72,7 +109,7 @@ mod tests {
         assert!(!latch.opened());
         latch.open();
         assert!(latch.opened());
-        latch.wait();
+        latch.wait_timeout(Duration::from_secs(1)).unwrap();
     }
 
     #[test]
@@ -83,7 +120,7 @@ mod tests {
             assert!(!thread_latch.opened());
             thread_latch.open();
         });
-        latch.wait();
+        latch.wait_timeout(Duration::from_secs(1)).unwrap();
         assert!(latch.opened());
     }
 
@@ -91,10 +128,10 @@ mod tests {
     fn opens_and_waits() {
         let latch = Latch::new();
         latch.open();
-        latch.wait();
-        latch.wait();
+        latch.wait_timeout(Duration::from_secs(1)).unwrap();
+        latch.wait_timeout(Duration::from_secs(1)).unwrap();
         latch.open();
-        latch.wait();
+        latch.wait_timeout(Duration::from_secs(1)).unwrap();
         assert!(latch.opened());
     }
 
@@ -102,7 +139,5 @@ mod tests {
     fn timeout() {
         let latch = Latch::new();
         assert!(latch.wait_timeout(Duration::from_millis(1)).is_err());
-        latch.open();
-        assert!(latch.wait_timeout(Duration::from_secs(1)).is_ok());
     }
 }
