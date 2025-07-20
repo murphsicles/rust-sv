@@ -1,4 +1,3 @@
-use crate::messages::message::Payload;
 use crate::messages::node_addr_ex::NodeAddrEx;
 use crate::util::{var_int, Error, Result, Serializable};
 use std::fmt;
@@ -17,16 +16,16 @@ pub struct Addr {
 
 impl Serializable<Addr> for Addr {
     fn read(reader: &mut dyn Read) -> Result<Addr> {
-        let mut ret = Addr { addrs: Vec::new() };
         let count = var_int::read(reader)?;
         if count > MAX_ADDR_COUNT {
             let msg = format!("Too many addrs: {}", count);
             return Err(Error::BadData(msg));
         }
+        let mut addrs = Vec::with_capacity(count as usize);
         for _i in 0..count {
-            ret.addrs.push(NodeAddrEx::read(reader)?);
+            addrs.push(NodeAddrEx::read(reader)?);
         }
-        Ok(ret)
+        Ok(Addr { addrs })
     }
 
     fn write(&self, writer: &mut dyn Write) -> io::Result<()> {
@@ -65,10 +64,7 @@ mod tests {
 
     #[test]
     fn read_bytes() {
-        let b = hex::decode(
-            "013c93dd5a250000000000000000000000000000000000ffff43cdb3a1479d".as_bytes(),
-        )
-        .unwrap();
+        let b = hex::decode("013c93dd5a250000000000000000000000000000000000ffff43cdb3a1479d").unwrap();
         let a = Addr::read(&mut Cursor::new(&b)).unwrap();
         assert!(a.addrs.len() == 1);
         assert!(a.addrs[0].last_connected_time == 1524470588);
