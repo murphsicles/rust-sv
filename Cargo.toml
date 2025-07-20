@@ -14,33 +14,35 @@ byteorder = "1.5.0"
 dns-lookup = "2.0.4"
 hex = "0.4.3"
 linked-hash-map = "0.5.6"
-log = { version = "0.4.21", features = ["max_level_trace", "release_max_level_warn"] } # Bumped for fixes
+log = { version = "0.4.27", features = ["max_level_trace", "release_max_level_warn"] }
+murmur3 = "0.5.2"
 num-bigint = "0.4.6"
 num-traits = "0.2.19"
-rand = { version = "0.9.1", features = ["getrandom"] } # Explicit getrandom
-secp256k1 = { version = "0.31.2", features = ["rand", "global-context", "recovery", "lowmemory"] } # Bumped, added features
+rand = { version = "0.9.1", features = ["getrandom"] }
+ripemd = "0.1.3"
+secp256k1 = { version = "0.31.2", features = ["rand", "global-context", "recovery", "lowmemory"] }
 secp256k1-sys = "0.11.0"
 snowflake = "1.3.0"
-smallvec = "1.11.2" # Added for perf
-subtle = "2.6.1" # Added for ct
-zeroize = { version = "1.8.1", features = ["zeroize_derive"] } # Added for secure mem
-sha2 = "0.10.8" # RustCrypto for SHA256
-hmac = "0.12.1" # RustCrypto for HMAC
-ripemd = "0.1.3" # Already had, for RIPEMD160
-rustls = { version = "0.23.11", features = ["tls12"] } # Added for TLS
+smallvec = "1.11.2"
+subtle = "2.6.1"
+zeroize = { version = "1.8.1", features = ["zeroize_derive"] }
+sha2 = "0.10.8"
+hmac = "0.12.1"
 
 [dependencies.tokio]
 version = "1.38.0"
 features = ["full"]
 optional = true
 
+rustls = { version = "0.23.11", features = ["tls12"] }
+
 [features]
 async = ["tokio"]
 
 [dev-dependencies]
 pretty_assertions = "1.4.0"
-criterion = "0.5.1" # Added for benches
-cargo-fuzz = "0.12.0" # Added for fuzz, use cargo fuzz
+criterion = "0.5.1"
+cargo-fuzz = "0.12.0"
 
 [profile.release]
 opt-level = 3
