@@ -1,15 +1,17 @@
-use crate::messages::{BlockHeader, OutPoint, Payload, Tx, TxOut};
+use crate::messages::block_header::BlockHeader;
+use crate::messages::tx::Tx;
+use crate::messages::{OutPoint, Payload};
 use crate::network::Network;
-use crate::util::{
-    sha256d, var_int, Error, Hash256, Result, Serializable, BITCOIN_CASH_FORK_HEIGHT_MAINNET,
-    BITCOIN_CASH_FORK_HEIGHT_TESTNET, GENESIS_UPGRADE_HEIGHT_MAINNET,
-    GENESIS_UPGRADE_HEIGHT_TESTNET,
-};
-use linked_hash_map::LinkedHashMap;
-use std::collections::{HashSet, VecDeque};
+use crate::script::{Script, TransactionChecker, NO_FLAGS, PREGENESIS_RULES};
+use crate::util::{sha256d, var_int, Error, Hash256, Result, Serializable};
+use indexmap::IndexMap;
+use std::collections::HashSet;
 use std::fmt;
 use std::io;
 use std::io::{Read, Write};
+
+/// Maximum number of transactions in a block for validation cap
+const MAX_TXNS: usize = 100_000_000_000;
 
 /// Block of transactions
 #[derive(Default, PartialEq, Eq, Hash, Clone)]
@@ -39,8 +41,8 @@ impl Block {
     }
 
     /// Returns a map of the new outputs generated from this block including those spent within the block
-    pub fn outputs(&self) -> Result<LinkedHashMap<OutPoint, TxOut>> {
-        let mut outputs = LinkedHashMap::new();
+    pub fn outputs(&self) -> Result<IndexMap<OutPoint, TxOut>> {
+        let mut outputs = IndexMap::new();
         for txn in self.txns.iter() {
             let hash = txn.hash();
             for index in 0..txn.outputs.len() as u32 {
@@ -58,11 +60,14 @@ impl Block {
         &self,
         height: i32,
         network: Network,
-        utxos: &LinkedHashMap<OutPoint, TxOut>,
+        utxos: &IndexMap<OutPoint, TxOut>,
         pregenesis_outputs: &HashSet<OutPoint>,
     ) -> Result<()> {
         if self.txns.len() == 0 {
             return Err(Error::BadData("Txn count is zero".to_string()));
+        }
+        if self.txns.len() > MAX_TXNS {
+            return Err(Error::BadData("Too many txns".to_string()));
         }
 
         if self.merkle_root() != self.header.merkle_root {
@@ -103,28 +108,30 @@ impl Block {
 
     /// Calculates the merkle root from the transactions
     fn merkle_root(&self) -> Hash256 {
-        let mut row = VecDeque::new();
+        let mut row = Vec::new();
         for tx in self.txns.iter() {
-            row.push_back(tx.hash());
+            row.push(tx.hash());
         }
         while row.len() > 1 {
             let mut n = row.len();
+            let mut new_row = Vec::with_capacity((n + 1) / 2);
             while n > 0 {
                 n -= 1;
-                let h1 = row.pop_front().unwrap();
+                let h1 = row.remove(0);
                 let h2 = if n == 0 {
-                    h1.clone()
+                    h1
                 } else {
                     n -= 1;
-                    row.pop_front().unwrap()
+                    row.remove(0)
                 };
                 let mut h = Vec::with_capacity(64);
-                h1.write(&mut h).unwrap();
-                h2.write(&mut h).unwrap();
-                row.push_back(sha256d(&h));
+                h.extend_from_slice(&h1.0);
+                h.extend_from_slice(&h2.0);
+                new_row.push(sha256d(&h));
             }
+            row = new_row;
         }
-        return row.pop_front().unwrap();
+        row.pop().unwrap_or(Hash256([0; 32]))
     }
 }
 
@@ -132,6 +139,9 @@ impl Serializable<Block> for Block {
     fn read(reader: &mut dyn Read) -> Result<Block> {
         let header = BlockHeader::read(reader)?;
         let txn_count = var_int::read(reader)?;
+        if txn_count > MAX_TXNS as u64 {
+            return Err(Error::BadData("Too many txns".to_string()));
+        }
         let mut txns = Vec::with_capacity(txn_count as usize);
         for _i in 0..txn_count {
             txns.push(Tx::read(reader)?);
@@ -222,9 +232,9 @@ mod tests {
                             lock_script: Script(vec![
                                 65, 4, 114, 17, 168, 36, 245, 91, 80, 82, 40, 228, 195, 213, 25,
                                 76, 31, 207, 170, 21, 164, 86, 171, 223, 55, 249, 185, 217, 122,
-                                64, 64, 175, 192, 115, 222, 230, 200, 144, 100, 152, 79, 3, 56, 82,
-                                55, 217, 33, 103, 193, 62, 35, 100, 70, 180, 23, 171, 121, 160,
-                                252, 174, 65, 42, 227, 49, 107, 119, 172,
+                                64, 64, 175, 192, 115, 222, 230, 200, 144, 100, 152, 79, 3, 56,
+                                82, 55, 217, 33, 103, 193, 62, 35, 100, 70, 180, 23, 171, 121,
+                                160, 252, 174, 65, 42, 227, 49, 107, 119, 172,
                             ]),
                         }],
                         lock_time: 0,
@@ -251,22 +261,40 @@ mod tests {
                 bits: 8,
                 nonce: 9,
             },
-            txns: vec![Tx {
-                version: 7,
-                inputs: vec![TxIn {
-                    prev_output: OutPoint {
-                        hash: Hash256([7; 32]),
-                        index: 3,
-                    },
-                    unlock_script: Script(vec![9, 8, 7]),
-                    sequence: 42,
-                }],
-                outputs: vec![TxOut {
-                    satoshis: 23,
-                    lock_script: Script(vec![1, 2, 3, 4, 5]),
-                }],
-                lock_time: 4,
-            }],
+            txns: vec![
+                Tx {
+                    version: 7,
+                    inputs: vec![TxIn {
+                        prev_output: OutPoint {
+                            hash: Hash256([7; 32]),
+                            index: 3,
+                        },
+                        unlock_script: Script(vec![9, 8, 7]),
+                        sequence: 42,
+                    }],
+                    outputs: vec![TxOut {
+                        satoshis: 23,
+                        lock_script: Script(vec![1, 2, 3, 4, 5]),
+                    }],
+                    lock_time: 4,
+                },
+                Tx {
+                    version: 8,
+                    inputs: vec![TxIn {
+                        prev_output: OutPoint {
+                            hash: Hash256([8; 32]),
+                            index: 4,
+                        },
+                        unlock_script: Script(vec![4, 3, 2]),
+                        sequence: 3,
+                    }],
+                    outputs: vec![TxOut {
+                        satoshis: 43,
+                        lock_script: Script(vec![10, 22]),
+                    }],
+                    lock_time: 0x44550011,
+                },
+            ],
         };
         block.write(&mut v).unwrap();
         assert!(v.len() == block.size());
