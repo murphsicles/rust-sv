@@ -1,13 +1,20 @@
-use crate::messages::Tx;
+use crate::messages::tx::Tx;
 use crate::transaction::sighash::{sighash, SigHashCache, SIGHASH_FORKID};
 use crate::util::{Error, Result};
 use secp256k1::{Message, PublicKey, Secp256k1};
 use secp256k1::ecdsa::Signature;
+use subtle::ConstantTimeEq;
 
 const LOCKTIME_THRESHOLD: i32 = 500000000;
 const SEQUENCE_LOCKTIME_DISABLE_FLAG: u32 = 1 << 31;
 const SEQUENCE_LOCKTIME_TYPE_FLAG: u32 = 1 << 22;
 
+/// Maximum signature length in bytes (DER format)
+const MAX_SIG_LEN: usize = 72;
+/// Maximum public key length in bytes (compressed/uncompressed)
+const MAX_PUBKEY_LEN: usize = 65;
+
+/// Trait for transaction signature and locktime/sequence checkers
 pub trait Checker {
     fn check_sig(&mut self, sig: &[u8], pubkey: &[u8], script: &[u8]) -> Result<bool>;
     fn check_locktime(&self, locktime: i32) -> Result<bool>;
@@ -34,7 +41,7 @@ pub struct TransactionChecker<'a> {
     pub tx: &'a Tx,
     pub sig_hash_cache: &'a mut SigHashCache,
     pub input: usize,
-    pub satoshis: i64,
+    pub satoshis: u64, // Changed to u64 for BSV
     pub require_sighash_forkid: bool,
 }
 
@@ -42,6 +49,12 @@ impl<'a> Checker for TransactionChecker<'a> {
     fn check_sig(&mut self, sig: &[u8], pubkey: &[u8], script: &[u8]) -> Result<bool> {
         if sig.len() < 1 {
             return Err(Error::ScriptError("Signature too short".to_string()));
+        }
+        if sig.len() > MAX_SIG_LEN {
+            return Err(Error::ScriptError("Signature too long".to_string()));
+        }
+        if pubkey.len() > MAX_PUBKEY_LEN {
+            return Err(Error::ScriptError("Public key too long".to_string()));
         }
         let sighash_type = sig[sig.len() - 1];
         if self.require_sighash_forkid && sighash_type & SIGHASH_FORKID == 0 {
@@ -57,11 +70,16 @@ impl<'a> Checker for TransactionChecker<'a> {
         )?;
         let der_sig = &sig[0..sig.len() - 1];
         let secp = Secp256k1::verification_only();
-        let mut signature = Signature::from_der(der_sig)?;
-        signature.normalize_s();
+        let signature = Signature::from_der(der_sig).map_err(|e| Error::Secp256k1Error(e))?;
+        let signature_normalized = {
+            let mut s = signature;
+            s.normalize_s();
+            s
+        };
         let message = Message::from_digest(sig_hash.0);
-        let public_key = PublicKey::from_slice(&pubkey)?;
-        Ok(secp.verify_ecdsa(message, &signature, &public_key).is_ok())
+        let public_key = PublicKey::from_slice(pubkey).map_err(|e| Error::Secp256k1Error(e))?;
+        let verified = secp.verify_ecdsa(&message, &signature_normalized, &public_key).is_ok();
+        Ok(u8::from(verified).ct_eq(&1).into())
     }
 
     fn check_locktime(&self, locktime: i32) -> Result<bool> {
@@ -102,7 +120,7 @@ impl<'a> Checker for TransactionChecker<'a> {
         if (sequence_masked < SEQUENCE_LOCKTIME_TYPE_FLAG
             && tx_sequence_masked >= SEQUENCE_LOCKTIME_TYPE_FLAG)
             || (sequence_masked >= SEQUENCE_LOCKTIME_TYPE_FLAG
-                && sequence_masked < SEQUENCE_LOCKTIME_TYPE_FLAG)
+                && tx_sequence_masked < SEQUENCE_LOCKTIME_TYPE_FLAG)
         {
             let msg = "sequence types different".to_string();
             return Err(Error::ScriptError(msg));
@@ -121,7 +139,6 @@ mod tests {
     use crate::messages::{OutPoint, TxIn, TxOut};
     use crate::script::op_codes::*;
     use crate::script::{Script, NO_FLAGS, PREGENESIS_RULES};
-    use crate::transaction::generate_signature;
     use crate::transaction::sighash::{
         SIGHASH_ALL, SIGHASH_ANYONECANPAY, SIGHASH_FORKID, SIGHASH_NONE, SIGHASH_SINGLE,
     };
@@ -340,7 +357,6 @@ mod tests {
         };
 
         // Sign the first input
-
         let mut cache = SigHashCache::new();
         let lock_script = &tx_1.outputs[0].lock_script.0;
         let sig_hash1 = sighash(&tx_2, 0, lock_script, 10, sighash_type, &mut cache).unwrap();
@@ -352,7 +368,6 @@ mod tests {
         tx_2.inputs[0].unlock_script = unlock_script1;
 
         // Add another input and sign that separately
-
         tx_2.inputs.push(TxIn {
             prev_output: OutPoint {
                 hash: tx_1.hash(),
@@ -364,7 +379,6 @@ mod tests {
 
         let mut cache = SigHashCache::new();
         let lock_script = &tx_1.outputs[1].lock_script.0;
-
         let sig_hash2 = sighash(&tx_2, 1, lock_script, 20, sighash_type, &mut cache).unwrap();
         let sig2 = generate_signature(&private_key2, &sig_hash2, sighash_type).unwrap();
 
@@ -471,7 +485,6 @@ mod tests {
         };
 
         // Sign the first input and output
-
         let mut cache = SigHashCache::new();
         let lock_script = &tx_1.outputs[0].lock_script.0;
         let sig_hash1 = sighash(&tx_2, 0, lock_script, 10, sighash_type, &mut cache).unwrap();
@@ -483,7 +496,6 @@ mod tests {
         tx_2.inputs[0].unlock_script = unlock_script1;
 
         // Add another input and output and sign that separately
-
         tx_2.inputs.push(TxIn {
             prev_output: OutPoint {
                 hash: tx_1.hash(),
@@ -633,5 +645,58 @@ mod tests {
             };
             assert!(lock_script.eval(&mut c, PREGENESIS_RULES).is_ok());
         }
+    }
+
+    #[test]
+    fn test_invalid_sig_len() {
+        let mut cache = SigHashCache::new();
+        let tx = Tx {
+            version: 1,
+            inputs: vec![TxIn {
+                prev_output: OutPoint {
+                    hash: Hash256([0; 32]),
+                    index: 0,
+                },
+                unlock_script: Script(vec![]),
+                sequence: 0xffffffff,
+            }],
+            outputs: vec![],
+            lock_time: 0,
+        };
+        let mut checker = TransactionChecker {
+            tx: &tx,
+            sig_hash_cache: &mut cache,
+            input: 0,
+            satoshis: 0,
+            require_sighash_forkid: false,
+        };
+        assert!(checker.check_sig(&vec![0; MAX_SIG_LEN + 1], &[0; 33], &[]).is_err());
+        assert!(checker.check_sig(&[], &[0; 33], &[]).is_err());
+    }
+
+    #[test]
+    fn test_invalid_pubkey_len() {
+        let mut cache = SigHashCache::new();
+        let tx = Tx {
+            version: 1,
+            inputs: vec![TxIn {
+                prev_output: OutPoint {
+                    hash: Hash256([0; 32]),
+                    index: 0,
+                },
+                unlock_script: Script(vec![]),
+                sequence: 0xffffffff,
+            }],
+            outputs: vec![],
+            lock_time: 0,
+        };
+        let mut checker = TransactionChecker {
+            tx: &tx,
+            sig_hash_cache: &mut cache,
+            input: 0,
+            satoshis: 0,
+            require_sighash_forkid: false,
+        };
+        assert!(checker.check_sig(&[0; 72], &[0; MAX_PUBKEY_LEN + 1], &[]).is_err());
     }
 }
