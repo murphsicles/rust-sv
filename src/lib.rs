@@ -1,16 +1,7 @@
-//! A foundation for building applications on Bitcoin SV using Rust.
+#![cfg_attr(not(feature = "std"), no_std)]
 
-extern crate byteorder;
-extern crate dns_lookup;
-extern crate hex;
-#[macro_use]
-extern crate log;
-extern crate linked_hash_map;
-extern crate murmur3;
-extern crate rand;
-extern crate ring;
-extern crate secp256k1;
-extern crate snowflake;
+#[cfg(feature = "async")]
+use tokio as _; // For async feature
 
 pub mod address;
 pub mod messages;
@@ -20,3 +11,11 @@ pub mod script;
 pub mod transaction;
 pub mod util;
 pub mod wallet;
+
+pub use messages::*;
+pub use network::*;
+pub use peer::*;
+pub use script::*;
+pub use transaction::*;
+pub use util::*;
+pub use wallet::*;
