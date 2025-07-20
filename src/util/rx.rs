@@ -1,9 +1,13 @@
-//! Lightweight reactive library
-
-use crate::util::future::{Future, FutureProvider};
-use crate::util::{Error, Result};
-use std::sync::{Arc, RwLock, TryLockError, Weak};
+use std::sync::{Arc, RwLock, Weak};
 use std::time::Duration;
+
+#[cfg(feature = "async")]
+use futures::channel::mpsc::{self, Receiver as StreamReceiver, Sender as StreamSender};
+#[cfg(feature = "async")]
+use futures::StreamExt;
+
+#[cfg(not(feature = "async"))]
+use std::sync::TryLockError;
 
 /// Observes an event of type T
 pub trait Observer<T>: Sync + Send {
@@ -29,7 +33,7 @@ pub trait Observable<T: Send + Sync + Clone + 'static> {
         self.subscribe(&poller);
         match future.get_timeout(duration) {
             Ok(t) => Ok(t),
-            Err(_future) => Err(Error::Timeout),
+            Err(_) => Err(Error::Timeout),
         }
     }
 }
@@ -50,7 +54,7 @@ impl<T> Subject<T> {
     }
 }
 
-impl<T> Observer<T> for Subject<T> {
+impl<T: Send + Sync + Clone> Observer<T> for Subject<T> {
     fn next(&self, event: &T) {
         let mut any_to_remove = false;
 
@@ -97,7 +101,7 @@ impl<T: Send + Sync + Clone + 'static> Observable<T> for Subject<T> {
 
 /// A subject that only emits a single value
 ///
-/// After a value is emmitted once, all future calls to next() will be ignored,
+/// After a value is emitted once, all future calls to next() will be ignored,
 /// and any future subscriptions will be called with the original value once.
 pub struct Single<T: Sync + Send + Clone> {
     subject: Subject<T>,
@@ -124,7 +128,7 @@ impl<T: Sync + Send + Clone> Observer<T> for Single<T> {
     }
 }
 
-impl<T: Sync + Send + Clone + 'static> Observable<T> for Single<T> {
+impl<T: Send + Sync + Clone + 'static> Observable<T> for Single<T> {
     fn subscribe<S: Observer<T> + 'static>(&self, observer: &Arc<S>) {
         match &*self.value.read().unwrap() {
             Some(value) => observer.next(&value),
@@ -133,10 +137,12 @@ impl<T: Sync + Send + Clone + 'static> Observable<T> for Single<T> {
     }
 }
 
+#[cfg(not(feature = "async"))]
 struct Poller<T: Sync + Send + Clone> {
     future_provider: FutureProvider<T>,
 }
 
+#[cfg(not(feature = "async"))]
 impl<T: Sync + Send + Clone> Poller<T> {
     pub fn new() -> (Arc<Poller<T>>, Future<T>) {
         let (future, future_provider) = Future::new();
@@ -144,9 +150,34 @@ impl<T: Sync + Send + Clone> Poller<T> {
     }
 }
 
+#[cfg(not(feature = "async"))]
 impl<T: Sync + Send + Clone> Observer<T> for Poller<T> {
     fn next(&self, event: &T) {
         self.future_provider.put(event.clone());
+    }
+}
+
+#[cfg(feature = "async")]
+struct Poller<T: Sync + Send + Clone> {
+    tx: StreamSender<T>,
+}
+
+#[cfg(feature = "async")]
+impl<T: Sync + Send + Clone> Poller<T> {
+    pub fn new() -> (Arc<Poller<T>>, Future<T>) {
+        let (tx, rx) = mpsc::channel(1);
+        let future = Future { rx };
+        (Arc::new(Poller { tx }), future)
+    }
+}
+
+#[cfg(feature = "async")]
+impl<T: Sync + Send + Clone> Observer<T> for Poller<T> {
+    fn next(&self, event: &T) {
+        let mut tx = self.tx.clone();
+        tokio::spawn(async move {
+            let _ = tx.send(event.clone()).await;
+        });
     }
 }
 
