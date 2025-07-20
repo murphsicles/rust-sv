@@ -1,11 +1,10 @@
 use crate::util::{var_int, Error, Result, Serializable};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use hex;
 use murmur3::murmur3_32;
 use rand::random;
 use std::fmt;
 use std::io;
-use std::io::{Cursor, Read, Write};
+use std::io::{Read, Write};
 use std::num::Wrapping;
 
 /// Maximum number of bytes in the bloom filter bit field
@@ -49,6 +48,9 @@ impl BloomFilter {
             "Creating bloom filter of size: {}, n_hash funcs: {}, tweak: {}",
             size, num_hash_funcs, tweak
         );
+        if size > BLOOM_FILTER_MAX_FILTER_SIZE {
+            return Err(Error::BadData("Filter size too large".to_string()));
+        }
         Ok(BloomFilter {
             filter: vec![0; size],
             num_hash_funcs,
@@ -128,7 +130,7 @@ impl fmt::Debug for BloomFilter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std;
+    use std::io::Cursor;
 
     #[test]
     fn write_read() {
