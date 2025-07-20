@@ -27,8 +27,11 @@ impl FilterAdd {
 
 impl Serializable<FilterAdd> for FilterAdd {
     fn read(reader: &mut dyn Read) -> Result<FilterAdd> {
-        let data_len = var_int::read(reader)?;
-        let mut data = vec![0; data_len as usize];
+        let data_len = var_int::read(reader)? as usize;
+        if data_len > MAX_FILTER_ADD_DATA_SIZE {
+            return Err(Error::BadData("Data too long".to_string()));
+        }
+        let mut data = vec![0; data_len];
         reader.read(&mut data)?;
         Ok(FilterAdd { data })
     }
@@ -61,10 +64,7 @@ mod tests {
 
     #[test]
     fn read_bytes() {
-        let b = hex::decode(
-            "20fdacf9b3eb077412e7a968d2e4f11b9a9dee312d666187ed77ee7d26af16cb0b".as_bytes(),
-        )
-        .unwrap();
+        let b = hex::decode("20fdacf9b3eb077412e7a968d2e4f11b9a9dee312d666187ed77ee7d26af16cb0b").unwrap();
         let f = FilterAdd::read(&mut Cursor::new(&b)).unwrap();
         assert!(f.data.len() == 32);
     }
