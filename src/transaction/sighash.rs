@@ -1,4 +1,6 @@
-use crate::messages::tx::Tx;
+//! Transaction sighash helpers
+
+use crate::messages::Tx;
 use crate::util::hash256::Hash256;
 use crate::util::{Error, Result};
 use secp256k1::{Message, Secp256k1, SecretKey};
@@ -48,7 +50,7 @@ pub fn generate_signature(
         return Err(Error::BadData("Invalid private key length".to_string()));
     }
     let secp = Secp256k1::new();
-    let secret_key = SecretKey::from_slice(&private_key)?;
+    let secret_key = SecretKey::from_slice(private_key)?;
     let message = Message::from_digest(sig_hash.0);
     let signature = secp.sign_ecdsa(&message, &secret_key);
     let signature_bytes = signature.serialize_der().to_vec();
@@ -70,7 +72,7 @@ pub fn sighash(
     let anyone_can_pay = (sighash_type & SIGHASH_ANYONECANPAY) != 0;
     if base != SIGHASH_ALL && base != SIGHASH_NONE && base != SIGHASH_SINGLE {
         let msg = format!("Invalid sighash type: {}", sighash_type);
-        return Err(Error.btc::BadArgument(msg));
+        return Err(Error::BadArgument(msg));
     }
     if input >= tx.inputs.len() {
         let msg = format!("Input index {} out of range", input);
