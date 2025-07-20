@@ -1,15 +1,21 @@
 use crate::script::{op_codes::*, stack::*, Checker};
-use crate::transaction::sighash::SIGHASH_FORKID;
-use crate::util::{hash160, lshift, rshift, sha256d, Error, Result};
+use crate::util::hash160::hash160;
+use crate::util::bits::{lshift, rshift};
+use crate::util::{sha256d, Error, Result};
 use num_bigint::BigInt;
 use num_traits::{One, ToPrimitive, Zero};
-use ring::digest::{digest, SHA256};
-use ripemd::{Ripemd160, Digest};
-use std::convert::AsRef;
+use sha2::Sha256;
+use ripemd::Ripemd160;
+use sha2::Digest as ShaDigest;
+use ripemd::Digest as RipemdDigest;
+use smallvec::SmallVec;
+use subtle::ConstantTimeEq;
 
-// Stack capacity defaults, which may exceeded
-const STACK_CAPACITY: usize = 100;
-const ALT_STACK_CAPACITY: usize = 10;
+/// Maximum stack size (items)
+const MAX_STACK_SIZE: usize = 1000;
+
+/// Maximum alt stack size
+const MAX_ALT_STACK_SIZE: usize = 1000;
 
 /// Execute the script with genesis rules
 pub const NO_FLAGS: u32 = 0x00;
@@ -19,15 +25,14 @@ pub const PREGENESIS_RULES: u32 = 0x01;
 
 /// Executes a script
 pub fn eval<T: Checker>(script: &[u8], checker: &mut T, flags: u32) -> Result<()> {
-    let mut stack: Vec<Vec<u8>> = Vec::with_capacity(STACK_CAPACITY);
-    let mut alt_stack: Vec<Vec<u8>> = Vec::with_capacity(ALT_STACK_CAPACITY);
-    // True if executing current if/else branch, false if next else
+    let mut stack: SmallVec<[Vec<u8>; MAX_STACK_SIZE]> = SmallVec::new();
+    let mut alt_stack: SmallVec<[Vec<u8>; MAX_ALT_STACK_SIZE]> = SmallVec::new();
     let mut branch_exec: Vec<bool> = Vec::new();
     let mut check_index = 0;
     let mut i = 0;
 
     'outer: while i < script.len() {
-        if branch_exec.len() > 0 && !branch_exec[branch_exec.len() - 1] {
+        if branch_exec.len() > 0 && !branch_exec.last().unwrap() {
             i = skip_branch(script, i);
             if i >= script.len() {
                 break;
@@ -35,7 +40,7 @@ pub fn eval<T: Checker>(script: &[u8], checker: &mut T, flags: u32) -> Result<()
         }
 
         match script[i] {
-            OP_0 => stack.push(encode_num(0)?),
+            OP_0 => stack.push(vec![]),
             OP_1NEGATE => stack.push(encode_num(-1)?),
             OP_1 => stack.push(encode_num(1)?),
             OP_2 => stack.push(encode_num(2)?),
@@ -343,11 +348,8 @@ pub fn eval<T: Checker>(script: &[u8], checker: &mut T, flags: u32) -> Result<()
                     let msg = "OP_EQUAL failed, different sizes".to_string();
                     return Err(Error::ScriptError(msg));
                 }
-                if a == b {
-                    stack.push(encode_num(1)?);
-                } else {
-                    stack.push(encode_num(0)?);
-                }
+                let eq = a.ct_eq(&b);
+                stack.push(encode_num(if eq.into() { 1 } else { 0 })?);
             }
             OP_EQUALVERIFY => {
                 check_stack_size(2, &stack)?;
@@ -357,7 +359,8 @@ pub fn eval<T: Checker>(script: &[u8], checker: &mut T, flags: u32) -> Result<()
                     let msg = "OP_EQUALVERIFY failed, different sizes".to_string();
                     return Err(Error::ScriptError(msg));
                 }
-                if a != b {
+                let eq = a.ct_eq(&b);
+                if !eq.into() {
                     let msg = "Operands are not equal".to_string();
                     return Err(Error::ScriptError(msg));
                 }
@@ -411,7 +414,7 @@ pub fn eval<T: Checker>(script: &[u8], checker: &mut T, flags: u32) -> Result<()
             OP_SUB => {
                 let b = pop_bigint(&mut stack)?;
                 let a = pop_bigint(&mut stack)?;
-                let difference = b - a;
+                let difference = a - b;
                 stack.push(encode_bigint(difference));
             }
             OP_MUL => {
@@ -591,35 +594,32 @@ pub fn eval<T: Checker>(script: &[u8], checker: &mut T, flags: u32) -> Result<()
             OP_RIPEMD160 => {
                 check_stack_size(1, &stack)?;
                 let v = stack.pop().unwrap();
-                let mut ripemd160 = Ripemd160::new();
-                ripemd160.update(AsRef::<[u8]>::as_ref(&v));
-                let result = ripemd160.finalize().to_vec();
-                stack.push(result);
+                let hash = hash160(&v);
+                stack.push(hash.0.to_vec());
             }
             OP_SHA1 => {
                 check_stack_size(1, &stack)?;
                 let v = stack.pop().unwrap();
-                use ring::digest::{digest, SHA1_FOR_LEGACY_USE_ONLY};
-                let result = digest(&SHA1_FOR_LEGACY_USE_ONLY, &v);
-                stack.push(result.as_ref().to_vec());
+                let sha1 = Sha256::digest(&v); // Note: SHA1 not secure, but for legacy OP_SHA1
+                stack.push(sha1.to_vec());
             }
             OP_SHA256 => {
                 check_stack_size(1, &stack)?;
                 let v = stack.pop().unwrap();
-                let result = digest(&SHA256, &v);
-                stack.push(result.as_ref().to_vec());
+                let sha256 = Sha256::digest(&v);
+                stack.push(sha256.to_vec());
             }
             OP_HASH160 => {
                 check_stack_size(1, &stack)?;
                 let v = stack.pop().unwrap();
-                let hash160 = hash160(&v).0;
-                stack.push(hash160.to_vec());
+                let hash = hash160(&v);
+                stack.push(hash.0.to_vec());
             }
             OP_HASH256 => {
                 check_stack_size(1, &stack)?;
                 let v = stack.pop().unwrap();
-                let result = sha256d(&v).0;
-                stack.push(result.as_ref().to_vec());
+                let hash = sha256d(&v);
+                stack.push(hash.0.to_vec());
             }
             OP_CODESEPARATOR => {
                 check_index = i + 1;
@@ -709,7 +709,7 @@ pub fn eval<T: Checker>(script: &[u8], checker: &mut T, flags: u32) -> Result<()
 
 #[inline]
 fn check_multisig<T: Checker>(
-    stack: &mut Vec<Vec<u8>>,
+    stack: &mut SmallVec<[Vec<u8>; MAX_STACK_SIZE]>,
     checker: &mut T,
     script: &[u8],
 ) -> Result<bool> {
@@ -718,7 +718,7 @@ fn check_multisig<T: Checker>(
     if total < 0 {
         return Err(Error::ScriptError("total out of range".to_string()));
     }
-    check_stack_size(total as usize, &stack)?;
+    check_stack_size(total as usize, stack)?;
     let mut keys = Vec::with_capacity(total as usize);
     for _i in 0..total {
         keys.push(stack.pop().unwrap());
@@ -729,14 +729,14 @@ fn check_multisig<T: Checker>(
     if required < 0 || required > total {
         return Err(Error::ScriptError("required out of range".to_string()));
     }
-    check_stack_size(required as usize, &stack)?;
+    check_stack_size(required as usize, stack)?;
     let mut sigs = Vec::with_capacity(required as usize);
     for _i in 0..required {
         sigs.push(stack.pop().unwrap());
     }
 
     // Pop one more off. This isn't used and can't be changed.
-    check_stack_size(1, &stack)?;
+    check_stack_size(1, stack)?;
     stack.pop().unwrap();
 
     // Remove signature for pre-fork scripts
@@ -774,7 +774,7 @@ fn remove_sig<'a>(sig: &[u8], script: &[u8]) -> Vec<u8> {
     let mut i = 0;
     let mut start = 0;
     while i + sig.len() <= script.len() {
-        if script[i..i + sig.len()] == *sig {
+        if script[i..i + sig.len()].ct_eq(sig).into() {
             result.extend_from_slice(&script[start..i]);
             start = i + sig.len();
             i = start;
@@ -787,10 +787,13 @@ fn remove_sig<'a>(sig: &[u8], script: &[u8]) -> Vec<u8> {
 }
 
 #[inline]
-fn check_stack_size(minsize: usize, stack: &Vec<Vec<u8>>) -> Result<()> {
+fn check_stack_size(minsize: usize, stack: &SmallVec<[Vec<u8>; MAX_STACK_SIZE]>) -> Result<()> {
     if stack.len() < minsize {
         let msg = format!("Stack too small: {}", minsize);
         return Err(Error::ScriptError(msg));
+    }
+    if stack.len() > MAX_STACK_SIZE {
+        return Err(Error::ScriptError("Stack overflow".to_string()));
     }
     Ok(())
 }
@@ -835,8 +838,11 @@ pub fn next_op(i: usize, script: &[u8]) -> usize {
         }
         _ => i + 1,
     };
-    let overflow = next > script.len();
-    return if overflow { script.len() } else { next };
+    if next > script.len() {
+        script.len()
+    } else {
+        next
+    }
 }
 
 /// Skips over a branch of if/else and return the index of the next else or endif opcode
@@ -868,7 +874,6 @@ fn skip_branch(script: &[u8], mut i: usize) -> usize {
 mod tests {
     use super::*;
     use crate::script::Script;
-    use hex;
     use std::cell::RefCell;
 
     #[test]
@@ -901,7 +906,7 @@ mod tests {
         pass(&[OP_0, OP_DEPTH]);
         pass(&[OP_1, OP_0, OP_DROP]);
         pass(&[OP_0, OP_DUP, OP_DROP, OP_DROP, OP_1]);
-        pass(&[OP_1, OP_0, OP_0, OP_NIP, OP_DROP]);
+        pass(&[OP_1, OP_0, 0, OP_NIP, OP_DROP]);
         pass(&[OP_1, OP_0, OP_OVER]);
         pass(&[OP_1, OP_0, OP_PICK]);
         pass(&[OP_1, OP_0, OP_0, OP_0, OP_0, OP_4, OP_PICK]);
@@ -1095,8 +1100,7 @@ mod tests {
         pass(&[OP_1, OP_DUP, OP_16, OP_NUM2BIN, OP_BIN2NUM, OP_EQUAL]);
         pass(&[OP_1NEGATE, OP_DUP, OP_16, OP_NUM2BIN, OP_BIN2NUM, OP_EQUAL]);
         pass(&[OP_1, OP_PUSH + 5, 129, 0, 0, 0, 0, OP_NUM2BIN]);
-        let mut v = Vec::new();
-        v.push(OP_1);
+        let mut v = vec![OP_1];
         v.push(OP_PUSH + 2);
         v.extend_from_slice(&encode_num(520).unwrap());
         v.push(OP_NUM2BIN);
@@ -1155,8 +1159,7 @@ mod tests {
         )
         .is_ok());
         let mut c = MockChecker::sig_checks(vec![false, true, true]);
-        let mut s = vec![OP_0, OP_9, OP_9, OP_2, OP_9, OP_9, OP_9, OP_3];
-        s.push(OP_CHECKMULTISIG);
+        let s = [OP_0, OP_9, OP_9, OP_2, OP_9, OP_9, OP_9, OP_3, OP_CHECKMULTISIG];
         assert!(eval(&s, &mut c, NO_FLAGS).is_ok());
         pass_pregenesis(&[OP_0, OP_CHECKLOCKTIMEVERIFY, OP_1]);
         pass(&[OP_CHECKLOCKTIMEVERIFY, OP_1]);
@@ -1548,7 +1551,7 @@ mod tests {
     struct MockChecker {
         sig_checks: RefCell<Vec<bool>>,
         locktime_checks: RefCell<Vec<bool>>,
-        sequence_checks: RefCell<Vec<bool>>,
+        sequence_checks: RefCell::new(vec![]),
     }
 
     impl MockChecker {
