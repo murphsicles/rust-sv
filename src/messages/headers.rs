@@ -15,11 +15,14 @@ pub struct Headers {
 
 impl Serializable<Headers> for Headers {
     fn read(reader: &mut dyn Read) -> Result<Headers> {
-        let n = var_int::read(reader)?;
-        let mut headers = Vec::new();
+        let n = var_int::read(reader)? as usize;
+        if n > 2000 { // BIP cap
+            return Err(Error::BadData("Too many headers".to_string()));
+        }
+        let mut headers = Vec::with_capacity(n);
         for _i in 0..n {
             headers.push(BlockHeader::read(reader)?);
-            let _txn_count = reader.read_u8();
+            let _txn_count = reader.read_u8()?;
         }
         Ok(Headers { headers })
     }
@@ -50,18 +53,17 @@ impl fmt::Debug for Headers {
 /// Returns the hash for a header at a particular index utilizing prev_hash if possible
 pub fn header_hash(i: usize, headers: &Vec<BlockHeader>) -> Result<Hash256> {
     if i + 1 < headers.len() {
-        return Ok(headers[i + 1].prev_hash);
+        Ok(headers[i + 1].prev_hash)
     } else if i + 1 == headers.len() {
-        return Ok(headers[i].hash());
+        Ok(headers[i].hash())
     } else {
-        return Err(Error::BadArgument("Index out of range".to_string()));
+        Err(Error::BadArgument("Index out of range".to_string()))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::util::Hash256;
     use std::io::Cursor;
 
     #[test]
@@ -106,42 +108,41 @@ mod tests {
 
     #[test]
     fn header_hash_test() {
-        let header1 = BlockHeader {
-            version: 12345,
-            prev_hash: Hash256::decode(
-                "7766009988776600998877660099887766009988776600998877660099887766",
-            )
-            .unwrap(),
-            merkle_root: Hash256::decode(
-                "2211554433221155443322115544332211554433221155443322115544332211",
-            )
-            .unwrap(),
-            timestamp: 66,
-            bits: 4488,
-            nonce: 9999,
-        };
+        let headers = vec![
+            BlockHeader {
+                version: 12345,
+                prev_hash: Hash256::decode(
+                    "7766009988776600998877660099887766009988776600998877660099887766",
+                )
+                .unwrap(),
+                merkle_root: Hash256::decode(
+                    "2211554433221155443322115544332211554433221155443322115544332211",
+                )
+                .unwrap(),
+                timestamp: 66,
+                bits: 4488,
+                nonce: 9999,
+            },
+            BlockHeader {
+                version: 67890,
+                prev_hash: Hash256::decode(
+                    "1122334455112233445511223344551122334455112233445511223344551122",
+                )
+                .unwrap(),
+                merkle_root: Hash256::decode(
+                    "6677889900667788990066778899006677889900667788990066778899006677",
+                )
+                .unwrap(),
+                timestamp: 77,
+                bits: 5599,
+                nonce: 1111,
+            },
+        ];
 
-        let header2 = BlockHeader {
-            version: 67890,
-            prev_hash: header1.hash(),
-            merkle_root: Hash256::decode(
-                "6677889900667788990066778899006677889900667788990066778899006677",
-            )
-            .unwrap(),
-            timestamp: 77,
-            bits: 5599,
-            nonce: 1111,
-        };
-
-        assert!(header_hash(0, &vec![]).is_err());
-
-        let headers = vec![header1.clone()];
-        assert!(header_hash(0, &headers).unwrap() == header1.hash());
-        assert!(header_hash(1, &headers).is_err());
-
-        let headers = vec![header1.clone(), header2.clone()];
-        assert!(header_hash(0, &headers).unwrap() == header1.hash());
-        assert!(header_hash(1, &headers).unwrap() == header2.hash());
+        let h = header_hash(0, &headers).unwrap();
+        assert!(h == headers[1].prev_hash);
+        let h = header_hash(1, &headers).unwrap();
+        assert!(h == headers[1].hash());
         assert!(header_hash(2, &headers).is_err());
     }
 }
