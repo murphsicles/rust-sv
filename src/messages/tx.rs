@@ -1,5 +1,6 @@
 use crate::messages::message::Payload;
-use crate::messages::{OutPoint, TxIn, TxOut, COINBASE_OUTPOINT_HASH, COINBASE_OUTPOINT_INDEX};
+use crate::messages::tx::{TxIn, TxOut};
+use crate::messages::{OutPoint, COINBASE_OUTPOINT_HASH, COINBASE_OUTPOINT_INDEX};
 use crate::script::{op_codes, Script, TransactionChecker, NO_FLAGS, PREGENESIS_RULES};
 use crate::transaction::sighash::SigHashCache;
 use crate::util::{sha256d, var_int, Error, Hash256, Result, Serializable};
@@ -162,7 +163,7 @@ impl Serializable<Tx> for Tx {
         let n_outputs = var_int::read(reader)?;
         let mut outputs = Vec::with_capacity(n_outputs as usize);
         for _i in 0..n_outputs {
-            outputs.push(TxOut::read(reader)?);
+            inputs.push(TxIn::read(reader)?);
         }
         let lock_time = reader.read_u32::<LittleEndian>()?;
         Ok(Tx {
