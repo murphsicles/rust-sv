@@ -3,6 +3,7 @@ use crate::messages::message::Payload;
 use crate::util::{sha256d, var_int, Error, Hash256, Result, Serializable};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use hex;
+use smallvec::SmallVec;
 use std::fmt;
 use std::io;
 use std::io::{Read, Write};
@@ -233,7 +234,7 @@ mod tests {
         assert!(p.header.timestamp == 1231469744);
         assert!(p.total_transactions == 7);
         assert!(p.hashes.len() == 4);
-        let hash1 = "3612262624047ee87660be1a707519a443b1c1ce3d248cbfc6c15870f6c5daa2";
+        let hash1 = "361226262624047ee87660be1a707519a443b1c1ce3d248cbfc6c15870f6c5daa2";
         assert!(p.hashes[0].0.to_vec() == hex::decode(hash1).unwrap());
         let hash2 = "019f5b01d4195ecbc9398fbf3c3b1fa9bb3183301d7a1fb3bd174fcfa40a2b65";
         assert!(p.hashes[1].0.to_vec() == hex::decode(hash2).unwrap());
@@ -306,7 +307,7 @@ mod tests {
         let hash2 = Hash256([2; 32]);
         let hash3 = Hash256([3; 32]);
         let hash4 = Hash256([4; 32]);
-        let right = hash(&hash(&hash2, &hash3), &hash4);
+        let right = hash(&hash2, &hash3);
         let merkle_root = hash(&hash1, &hash(&right, &right));
         let header = BlockHeader {
             version: 12345,
@@ -331,4 +332,4 @@ mod tests {
         v.extend_from_slice(&b.0);
         sha256d(&v)
     }
-                               }
+}
