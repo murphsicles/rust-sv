@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex, Weak};
 use std::io;
 use std::thread;
 use std::time::{Duration, UNIX_EPOCH};
+use crate::util::rx::{Observable, Single};
 
 /// A connection to a remote peer
 #[derive(Clone)]
@@ -31,6 +32,12 @@ pub struct Peer {
     active: Arc<AtomicBool>,
     /// Whether we initiated the connection
     outbound: bool,
+    /// Event for connection established
+    connected_event: Arc<Single<PeerConnected>>,
+    /// Event for disconnection
+    disconnected_event: Arc<Single<PeerDisconnected>>,
+    /// Event for received messages
+    message_event: Arc<Single<PeerMessage>>,
 }
 
 impl PartialEq for Peer {
@@ -49,6 +56,53 @@ impl Hash for Peer {
     }
 }
 
+/// Event emitted when a peer connects
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PeerConnected {
+    pub peer: Arc<Peer>,
+}
+
+/// Event emitted when a peer disconnects
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PeerDisconnected {
+    pub peer: Arc<Peer>,
+}
+
+/// Event emitted when a message is received from a peer
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PeerMessage {
+    pub peer: Arc<Peer>,
+    pub message: Message,
+}
+
+/// Trait for filtering peer messages
+pub trait PeerFilter {
+    fn filter(&self, message: &Message) -> bool;
+}
+
+/// Filter for BSV specific messages
+#[derive(Debug, Clone)]
+pub struct SVPeerFilter {
+    nonce: u64,
+}
+
+impl SVPeerFilter {
+    pub fn new(nonce: u64) -> Self {
+        SVPeerFilter { nonce }
+    }
+}
+
+impl PeerFilter for SVPeerFilter {
+    fn filter(&self, message: &Message) -> bool {
+        // Example filter: allow only Ping messages with matching nonce
+        if let Message::Ping(ping) = message {
+            ping.nonce == self.nonce
+        } else {
+            true
+        }
+    }
+}
+
 impl Peer {
     /// Creates a new disconnected peer
     pub fn new(network: Network, ip: IpAddr, port: u16) -> Peer {
@@ -60,6 +114,9 @@ impl Peer {
             rx: Arc::new(rx::Single::new()),
             active: Arc::new(AtomicBool::new(false)),
             outbound: false,
+            connected_event: Arc::new(Single::new()),
+            disconnected_event: Arc::new(Single::new()),
+            message_event: Arc::new(Single::new()),
         }
     }
 
@@ -74,7 +131,28 @@ impl Peer {
             rx: Arc::new(rx::Single::new()),
             active: Arc::new(AtomicBool::new(true)),
             outbound: false,
+            connected_event: Arc::new(Single::new()),
+            disconnected_event: Arc::new(Single::new()),
+            message_event: Arc::new(Single::new()),
         })
+    }
+
+    /// Creates a new peer and connects with the specified version and filter
+    pub fn connect(
+        ip: IpAddr,
+        port: u16,
+        network: Network,
+        version: Version,
+        filter: SVPeerFilter,
+    ) -> Arc<Peer> {
+        let peer = Peer::new(network, ip, port);
+        let tpeer = peer.connect().unwrap();
+        tpeer.send(Message::Version(version)).unwrap();
+        tpeer.message_event.next(&PeerMessage {
+            peer: tpeer.clone(),
+            message: Message::Ping(Ping { nonce: filter.nonce }),
+        });
+        tpeer
     }
 
     /// Returns whether the peer is connected
@@ -93,6 +171,10 @@ impl Peer {
         debug!("{:?} Write {:#?}", self, message);
         socket.write_all(&message.write_vec()?)?;
         socket.flush()?;
+        self.message_event.next(&PeerMessage {
+            peer: Arc::new(self.clone()),
+            message: message.clone(),
+        });
         Ok(())
     }
 
@@ -108,6 +190,9 @@ impl Peer {
             }
         }
         self.active.store(false, Ordering::SeqCst);
+        self.disconnected_event.next(&PeerDisconnected {
+            peer: Arc::new(self.clone()),
+        });
         Ok(())
     }
 
@@ -128,6 +213,9 @@ impl Peer {
             rx: Arc::new(rx::Single::new()),
             active: Arc::new(AtomicBool::new(true)),
             outbound: true,
+            connected_event: Arc::new(Single::new()),
+            disconnected_event: Arc::new(Single::new()),
+            message_event: Arc::new(Single::new()),
         });
         info!("{:?} Connecting to {:?}:{}", tpeer, tpeer.ip, tpeer.port);
         let weak = Arc::downgrade(&tpeer);
@@ -138,6 +226,9 @@ impl Peer {
                 return;
             }
             info!("{:?} Connected to {:?}:{}", tpeer, tpeer.ip, tpeer.port);
+            tpeer.connected_event.next(&PeerConnected {
+                peer: tpeer.clone(),
+            });
             let mut socket = match tpeer.socket.lock() {
                 Ok(s) => s,
                 Err(_) => return,
@@ -152,6 +243,10 @@ impl Peer {
                     Ok(message) => {
                         debug!("{:?} Read {:#?}", tpeer, message);
                         let weak = weak.clone();
+                        tpeer.message_event.next(&PeerMessage {
+                            peer: tpeer.clone(),
+                            message: message.clone(),
+                        });
                         if tpeer.rx.send(message, move || {
                             weak.upgrade()
                                 .map(|p| p.active.load(Ordering::SeqCst))
@@ -230,6 +325,21 @@ impl Peer {
                 addr: self.network.node_addr(),
             }],
         })
+    }
+
+    /// Returns the observable for connection events
+    pub fn connected_event(&self) -> &Arc<Single<PeerConnected>> {
+        &self.connected_event
+    }
+
+    /// Returns the observable for disconnection events
+    pub fn disconnected_event(&self) -> &Arc<Single<PeerDisconnected>> {
+        &self.disconnected_event
+    }
+
+    /// Returns the observable for received messages
+    pub fn messages(&self) -> &Arc<Single<PeerMessage>> {
+        &self.message_event
     }
 }
 
