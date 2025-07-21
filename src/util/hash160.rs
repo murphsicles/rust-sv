@@ -3,7 +3,7 @@ use ripemd::{Ripemd160, Digest as RipemdDigest};
 use std::fmt;
 use zeroize::Zeroize;
 
-#[derive(Default, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Default, Clone, PartialEq, Eq, Hash)]
 pub struct Hash160(pub [u8; 20]);
 
 pub fn hash160(data: &[u8]) -> Hash160 {
