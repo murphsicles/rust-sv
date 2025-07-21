@@ -1,4 +1,5 @@
 use crate::script::{op_codes::*, stack::*, Checker};
+use crate::transaction::sighash::SIGHASH_FORKID;
 use crate::util::hash160::hash160;
 use crate::util::bits::{lshift, rshift};
 use crate::util::{sha256d, Error, Result};
