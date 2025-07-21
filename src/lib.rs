@@ -1,5 +1,3 @@
-#![cfg_attr(not(feature = "std"), no_std)]
-
 #[cfg(feature = "async")]
 use tokio as _; // For async feature
 
