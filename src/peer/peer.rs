@@ -1,8 +1,8 @@
 //! Peer connection management
 
-use crate::messages::{Addr, Message, Ping, Reject, Version};
+use crate::messages::{Addr, Message, Ping, Reject, Version, node_addr_ex::NodeAddrEx};
 use crate::network::Network;
-use crate::util::{Error, Result, Rx};
+use crate::util::{Error, Result, rx};
 use log::{debug, error, info, warn};
 use std::hash::{Hash, Hasher};
 use std::fmt;
@@ -26,7 +26,7 @@ pub struct Peer {
     /// TCP socket for the connection
     socket: Arc<Mutex<Option<TcpStream>>>,
     /// Receiver channel for messages
-    rx: Arc<Rx<Message>>,
+    rx: Arc<rx::Single<Message>>,
     /// Whether the connection is active
     active: Arc<AtomicBool>,
     /// Whether we initiated the connection
@@ -57,7 +57,7 @@ impl Peer {
             ip,
             port,
             socket: Arc::new(Mutex::new(None)),
-            rx: Arc::new(Rx::new()),
+            rx: Arc::new(rx::Single::new()),
             active: Arc::new(AtomicBool::new(false)),
             outbound: false,
         }
@@ -71,7 +71,7 @@ impl Peer {
             ip: addr.ip(),
             port: addr.port(),
             socket: Arc::new(Mutex::new(Some(socket))),
-            rx: Arc::new(Rx::new()),
+            rx: Arc::new(rx::Single::new()),
             active: Arc::new(AtomicBool::new(true)),
             outbound: false,
         })
@@ -125,7 +125,7 @@ impl Peer {
             ip: self.ip,
             port: self.port,
             socket: Arc::new(Mutex::new(Some(socket))),
-            rx: Arc::new(Rx::new()),
+            rx: Arc::new(rx::Single::new()),
             active: Arc::new(AtomicBool::new(true)),
             outbound: true,
         });
