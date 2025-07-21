@@ -1,11 +1,15 @@
+//! Bloom filter for filtering transactions and merkle blocks
+
 use crate::util::{var_int, Error, Result, Serializable};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use murmur3::murmur3_32;
 use rand::random;
 use std::fmt;
 use std::io;
-use std::io::{Read, Write};
+use std::io::{Cursor, Read, Write};
 use std::num::Wrapping;
+use log::debug;
+use hex;
 
 /// Maximum number of bytes in the bloom filter bit field
 pub const BLOOM_FILTER_MAX_FILTER_SIZE: usize = 36000;
