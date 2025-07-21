@@ -4,7 +4,7 @@
 //!
 //! Send and receive a message to a node synchronously:
 //!
-//! ```no_run, rust
+//! ```no_run
 //! use sv::messages::{Message, Ping, Version, NODE_BITCOIN_CASH, PROTOCOL_VERSION};
 //! use sv::network::NetworkConfig;
 //! use sv::peer::{Peer, SVPeerFilter};
@@ -32,7 +32,7 @@
 //!
 //! Handle node events asynchronously:
 //!
-//! ```no_run, rust
+//! ```no_run
 //! use sv::messages::{Version, NODE_BITCOIN_CASH, PROTOCOL_VERSION};
 //! use sv::network::NetworkConfig;
 //! use sv::peer::{Peer, PeerConnected, PeerDisconnected, PeerMessage, SVPeerFilter};
@@ -80,7 +80,7 @@
 //! ```
 
 pub(crate) mod atomic_reader;
-mod peer;
+pub mod peer;
 
 pub use self::peer::{
     Peer, PeerConnected, PeerDisconnected, PeerFilter, PeerMessage, SVPeerFilter,
