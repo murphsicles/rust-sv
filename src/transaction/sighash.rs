@@ -1,6 +1,6 @@
 //! Transaction sighash helpers
 
-use crate::messages::{OutPoint, TxOut};
+use crate::messages::{OutPoint, Tx, TxIn, TxOut};
 use crate::script::{op_codes, Script};
 use crate::util::{var_int, Error, Hash256, Result, sha256d};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -33,12 +33,12 @@ const MAX_IO: usize = 1_000_000;
 /// # Arguments
 ///
 /// * 'tx' - Spending transaction
- * 'n_input' - Spending input index
- * 'script_code' - The lock_script of the output being spent. This may be a subset of the
-lock_script if OP_CODESEPARATOR is used.
- * 'satoshis' - The satoshi amount in the output being spent
- * 'sighash_type' - Sighash flags
- * 'cache' - Cache to store intermediate values for future sighash calls.
+/// * 'n_input' - Spending input index
+/// * 'script_code' - The lock_script of the output being spent. This may be a subset of the
+///   lock_script if OP_CODESEPARATOR is used.
+/// * 'satoshis' - The satoshi amount in the output being spent
+/// * 'sighash_type' - Sighash flags
+/// * 'cache' - Cache to store intermediate values for future sighash calls.
 pub fn sighash(
     tx: &Tx,
     n_input: usize,
