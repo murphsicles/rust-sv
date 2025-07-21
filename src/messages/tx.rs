@@ -163,7 +163,7 @@ impl Serializable<Tx> for Tx {
         let n_outputs = var_int::read(reader)?;
         let mut outputs = Vec::with_capacity(n_outputs as usize);
         for _i in 0..n_outputs {
-            inputs.push(TxIn::read(reader)?);
+            outputs.push(TxOut::read(reader)?);
         }
         let lock_time = reader.read_u32::<LittleEndian>()?;
         Ok(Tx {
