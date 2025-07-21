@@ -1,3 +1,6 @@
+//! A one-way latch for thread synchronization
+
+use crate::Error;
 use std::fmt;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
@@ -61,12 +64,12 @@ impl Latch {
 
     /// Waits until open is called, with a timeout. The result will return Error::Timeout if a timeout occurred.
     #[cfg(not(feature = "async"))]
-    pub fn wait_timeout(&self, duration: Duration) -> Result<()> {
+    pub fn wait_timeout(&self, duration: Duration) -> Result<(), crate::Error> {
         let mut open = self.open.lock().unwrap();
         while !*open {
             let result = self.condvar.wait_timeout(open, duration).unwrap();
             if result.1.timed_out() {
-                return Err(Error::Timeout);
+                return Err(crate::Error::Timeout);
             }
             open = result.0;
         }
@@ -74,10 +77,10 @@ impl Latch {
     }
 
     #[cfg(feature = "async")]
-    pub async fn wait_timeout(&self, duration: Duration) -> Result<()> {
+    pub async fn wait_timeout(&self, duration: Duration) -> Result<(), crate::Error> {
         match tokio::time::timeout(duration, self.notify.notified()).await {
             Ok(_) => Ok(()),
-            Err(_) => Err(Error::Timeout),
+            Err(_) => Err(crate::Error::Timeout),
         }
     }
 
