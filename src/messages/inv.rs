@@ -1,5 +1,5 @@
 use crate::messages::message::Payload;
-use crate::util::{var_int, Error, Result, Serializable};
+use crate::util::{var_int, Error, Result, Serializable, Hash256};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::fmt;
 use std::io;
