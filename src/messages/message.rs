@@ -1,3 +1,5 @@
+//! Message types for Bitcoin peer-to-peer communication
+
 use crate::messages::addr::Addr;
 use crate::messages::block::Block;
 use crate::messages::block_locator::BlockLocator;
@@ -14,7 +16,7 @@ use crate::messages::send_cmpct::SendCmpct;
 use crate::messages::tx::Tx;
 use crate::messages::version::Version;
 use crate::util::{Error, Result, Serializable};
-use ring::digest;
+use sha2::{Digest, Sha256};
 use std::fmt;
 use std::io;
 use std::io::{Cursor, Read, Write};
@@ -153,8 +155,7 @@ impl Message {
             Err(e) => {
                 if let Error::IOError(ref e) = e {
                     // Depending on platform, either TimedOut or WouldBlock may be returned to indicate a non-error timeout
-                    if e.kind() == io::ErrorKind::TimedOut || e.kind() == io::ErrorKind::WouldBlock
-                    {
+                    if e.kind() == io::ErrorKind::TimedOut || e.kind() == io::ErrorKind::WouldBlock {
                         return Ok(Message::Partial(header));
                     }
                 }
@@ -444,16 +445,16 @@ fn write_with_payload<T: Serializable<T>>(
 ) -> io::Result<()> {
     let mut bytes = Vec::with_capacity(payload.size());
     payload.write(&mut bytes)?;
-    let hash = digest::digest(&digest::SHA256, bytes.as_ref());
-    let hash = digest::digest(&digest::SHA256, &hash.as_ref());
-    let h = &hash.as_ref();
+    let hash = Sha256::digest(&bytes);
+    let hash = Sha256::digest(&hash);
+    let h = hash.as_slice();
     let checksum = [h[0], h[1], h[2], h[3]];
 
     let header = MessageHeader {
         magic,
         command,
         payload_size: payload.size() as u32,
-        checksum: checksum,
+        checksum,
     };
 
     header.write(writer)?;
@@ -519,7 +520,7 @@ mod tests {
                 bits: 0x1a44b9f2,
                 nonce: 0x9546a142,
             },
-            txns: vec![
+            txs: vec![
                 Tx {
                     version: 0x44556677,
                     inputs: vec![TxIn {
