@@ -1,3 +1,7 @@
+//! Event publisher and observer for synchronization
+
+use crate::Error;
+use crate::util::future::FutureProvider;
 use std::sync::{Arc, RwLock, Weak};
 use std::time::Duration;
 
@@ -28,12 +32,12 @@ pub trait Observable<T: Send + Sync + Clone + 'static> {
     }
 
     /// Waits for an event to be emitted with a timeout
-    fn poll_timeout(&self, duration: Duration) -> Result<T> {
+    fn poll_timeout(&self, duration: Duration) -> Result<T, crate::Error> {
         let (poller, future) = Poller::new();
         self.subscribe(&poller);
         match future.get_timeout(duration) {
             Ok(t) => Ok(t),
-            Err(_) => Err(Error::Timeout),
+            Err(_) => Err(crate::Error::Timeout),
         }
     }
 }
@@ -144,7 +148,7 @@ struct Poller<T: Sync + Send + Clone> {
 
 #[cfg(not(feature = "async"))]
 impl<T: Sync + Send + Clone> Poller<T> {
-    pub fn new() -> (Arc<Poller<T>>, Future<T>) {
+    pub fn new() -> (Arc<Poller<T>>, Box<dyn FutureProvider<T>>) {
         let (future, future_provider) = Future::new();
         (Arc::new(Poller { future_provider }), future)
     }
@@ -164,7 +168,7 @@ struct Poller<T: Sync + Send + Clone> {
 
 #[cfg(feature = "async")]
 impl<T: Sync + Send + Clone> Poller<T> {
-    pub fn new() -> (Arc<Poller<T>>, Future<T>) {
+    pub fn new() -> (Arc<Poller<T>>, Box<dyn FutureProvider<T>>) {
         let (tx, rx) = mpsc::channel(1);
         let future = Future { rx };
         (Arc::new(Poller { tx }), future)
