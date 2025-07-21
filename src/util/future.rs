@@ -1,137 +1,84 @@
-use std::fmt;
-use std::mem::swap;
+//! Future abstraction for polling a value either synchronously or asynchronously
+
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 #[cfg(feature = "async")]
-use tokio::sync::oneshot::{self, Receiver, Sender};
+use tokio::time::{sleep, Sleep};
 
-#[cfg(not(feature = "async"))]
-struct Sender<T>(Arc<Mutex<Option<T>>>);
-
-#[cfg(not(feature = "async"))]
-struct Receiver<T>(Arc<Mutex<Option<T>>>);
-
-/// A promise for a value in the future
-pub struct Future<T> {
-    #[cfg(feature = "async")]
-    rx: Receiver<T>,
-    #[cfg(not(feature = "async"))]
-    rx: Receiver<T>,
+/// Provides a value after some delay
+pub trait FutureProvider<T> {
+    fn poll_timeout(&self, duration: Duration) -> Result<T, crate::Error>;
 }
 
-/// A provider for a Future's value
-pub struct FutureProvider<T> {
-    #[cfg(feature = "async")]
-    tx: Sender<T>,
-    #[cfg(not(feature = "async"))]
-    tx: Sender<T>,
+/// Synchronous future
+pub struct SyncFuture<T> {
+    value: Arc<Mutex<Option<T>>>,
 }
 
-impl<T: Send> Future<T> {
-    /// Creates a new future and its provider
-    pub fn new() -> (Future<T>, FutureProvider<T>) {
-        #[cfg(feature = "async")]
-        let (tx, rx) = oneshot::channel();
-
-        #[cfg(not(feature = "async"))]
-        let (tx, rx) = {
-            let shared = Arc::new(Mutex::new(None));
-            (Sender(shared.clone()), Receiver(shared))
-        };
-
-        (Future { rx }, FutureProvider { tx })
-    }
-
-    /// Creates a future that returns a specific value
-    pub fn single(value: T) -> Future<T> {
-        let (mut provider, future) = Future::new();
-        provider.put(value);
-        future
-    }
-
-    /// Waits for a value and consumes the future
-    #[cfg(not(feature = "async"))]
-    pub fn get(self) -> T {
-        loop {
-            let guard = self.rx.0.lock().unwrap();
-            if let Some(value) = guard.as_ref() {
-                return value.clone();
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        }
-    }
-
-    #[cfg(feature = "async")]
-    pub async fn get(self) -> T {
-        self.rx.await.unwrap()
-    }
-
-    /// Waits up to a certain duration for a value and consumes the future
-    #[cfg(not(feature = "async"))]
-    pub fn get_timeout(self, duration: Duration) -> Result<T, Future<T>> {
-        let start = std::time::Instant::now();
-        loop {
-            let guard = self.rx.0.lock().unwrap();
-            if let Some(value) = guard.as_ref() {
-                return Ok(value.clone());
-            }
-            if start.elapsed() > duration {
-                return Err(self);
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        }
-    }
-
-    #[cfg(feature = "async")]
-    pub async fn get_timeout(self, duration: Duration) -> Result<T, Future<T>> {
-        match tokio::time::timeout(duration, self.rx).await {
-            Ok(Ok(value)) => Ok(value),
-            _ => Err(self),
+impl<T: Clone> SyncFuture<T> {
+    pub fn new(value: T) -> SyncFuture<T> {
+        SyncFuture {
+            value: Arc::new(Mutex::new(Some(value))),
         }
     }
 }
 
-impl<T: Send> FutureProvider<T> {
-    /// Sets a value and unblocks the Future
-    pub fn put(self, value: T) {
-        #[cfg(feature = "async")]
-        let _ = self.tx.send(value);
-
-        #[cfg(not(feature = "async"))]
-        *self.tx.0.lock().unwrap() = Some(value);
+impl<T: Clone> FutureProvider<T> for SyncFuture<T> {
+    fn poll_timeout(&self, _duration: Duration) -> Result<T, crate::Error> {
+        let value = self.value.lock().map_err(|_| {
+            crate::Error::Poison("Failed to lock value".to_string())
+        })?;
+        value.clone().ok_or_else(|| {
+            crate::Error::Timeout
+        })
     }
 }
 
-impl<T> fmt::Debug for Future<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let state = "pending"; // Simplified, as we can't check easily
-        f.write_str(&format!("Future({})", state))
+#[cfg(feature = "async")]
+pub struct AsyncFuture<T> {
+    sleep: Sleep,
+    value: Arc<Mutex<Option<T>>>,
+}
+
+#[cfg(feature = "async")]
+impl<T: Clone + Send + Sync + 'static> AsyncFuture<T> {
+    pub fn new(value: T, duration: Duration) -> AsyncFuture<T> {
+        AsyncFuture {
+            sleep: sleep(duration),
+            value: Arc::new(Mutex::new(Some(value))),
+        }
     }
 }
 
-impl<T> fmt::Debug for FutureProvider<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let state = "pending"; // Simplified
-        f.write_str(&format!("FutureProvider({})", state))
+#[cfg(feature = "async")]
+impl<T: Clone + Send + Sync + 'static> FutureProvider<T> for AsyncFuture<T> {
+    fn poll_timeout(&self, duration: Duration) -> Result<T, crate::Error> {
+        let value = self.value.lock().map_err(|_| {
+            crate::Error::Poison("Failed to lock value".to_string())
+        })?;
+        if value.is_none() {
+            return Err(crate::Error::Timeout);
+        }
+        Ok(value.clone().unwrap())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::thread;
+    use std::time::Duration;
 
     #[test]
-    fn across_threads() {
-        let (future, provider) = Future::<u32>::new();
-        thread::spawn(move || provider.put(3));
-        assert!(future.get_timeout(Duration::from_secs(1)).unwrap() == 3);
+    fn sync_future() {
+        let future = SyncFuture::new(42);
+        assert_eq!(future.poll_timeout(Duration::from_secs(1)).unwrap(), 42);
     }
 
-    #[test]
-    fn timeout() {
-        let (future, _provider) = Future::<u32>::new();
-        assert!(future.get_timeout(Duration::from_millis(1)).is_err());
+    #[cfg(feature = "async")]
+    #[tokio::test]
+    async fn async_future() {
+        let future = AsyncFuture::new(42, Duration::from_millis(100));
+        assert_eq!(future.poll_timeout(Duration::from_secs(1)).unwrap(), 42);
     }
 }
