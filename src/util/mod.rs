@@ -3,7 +3,7 @@
 use std::time::SystemTime;
 
 #[allow(dead_code)]
-mod bits;
+pub mod bits;
 mod bloom_filter;
 #[allow(dead_code)]
 mod future;
