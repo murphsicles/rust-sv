@@ -1,13 +1,23 @@
 //! A block of transactions
 
-use crate::messages::{block_header::BlockHeader, tx::Tx, OutPoint, TxOut};
+use crate::messages::{block_header::BlockHeader, tx::{Tx, TxIn, TxOut}, OutPoint};
 use crate::network::Network;
 use crate::script::{NO_FLAGS, PREGENESIS_RULES, Script, TransactionChecker};
+use crate::transaction::sighash::SigHashCache;
 use crate::util::{var_int, Error, Hash256, Result, Serializable};
+use crate::messages::message::Payload;
 use indexmap::IndexMap;
 use std::collections::HashSet;
 use std::fmt;
 use std::io::{Read, Write};
+
+// Bitcoin Cash fork heights
+pub const BITCOIN_CASH_FORK_HEIGHT_MAINNET: u32 = 478559;
+pub const BITCOIN_CASH_FORK_HEIGHT_TESTNET: u32 = 1155875;
+
+// Genesis upgrade heights
+pub const GENESIS_UPGRADE_HEIGHT_MAINNET: u32 = 620448;
+pub const GENESIS_UPGRADE_HEIGHT_TESTNET: u32 = 1344300;
 
 /// A block of transactions
 #[derive(Default, PartialEq, Eq, Hash, Clone)]
@@ -30,7 +40,13 @@ impl Block {
             if !txids.insert(txid) {
                 return Err(Error::BadData("Duplicate txid".to_string()));
             }
-            let checker = TransactionlessChecker {};
+            let checker = TransactionChecker {
+                tx,
+                input: 0,
+                satoshis: 0,
+                sig_hash_cache: &mut SigHashCache::new(),
+                require_sighash_forkid: true,
+            };
             if i == 0 {
                 if !tx.is_coinbase() {
                     return Err(Error::BadData("First tx not coinbase".to_string()));
