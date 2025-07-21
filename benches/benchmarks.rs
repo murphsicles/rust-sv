@@ -4,6 +4,7 @@ use rust_sv::script::Script;
 use rust_sv::script::checker::TransactionlessChecker;
 use rust_sv::util::hash256::sha256d;
 use rust_sv::wallet::extended_key::extended_key_from_seed;
+use rust_sv::network::Network;
 
 fn benchmark_eval(c: &mut Criterion) {
     let script = Script::new();
@@ -18,7 +19,7 @@ fn benchmark_sha256d(c: &mut Criterion) {
 
 fn benchmark_extended_key(c: &mut Criterion) {
     let seed = vec![0u8; 32];
-    c.bench_function("extended_key_from_seed", |b| b.iter(|| extended_key_from_seed(&seed, rust_sv::network::Network::Mainnet)));
+    c.bench_function("extended_key_from_seed", |b| b.iter(|| extended_key_from_seed(&seed, Network::Mainnet)));
 }
 
 criterion_group!(benches, benchmark_eval, benchmark_sha256d, benchmark_extended_key);
