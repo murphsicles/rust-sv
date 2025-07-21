@@ -7,7 +7,7 @@ use std::io;
 use std::io::{Read, Write};
 use zeroize::Zeroize;
 
-#[derive(Default, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Default, Clone, PartialEq, Eq, Hash)]
 pub struct Hash256(pub [u8; 32]);
 
 impl Hash256 {
