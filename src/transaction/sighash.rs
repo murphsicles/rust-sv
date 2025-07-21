@@ -1,6 +1,6 @@
 //! Transaction sighash helpers
 
-use crate::messages::{OutPoint, TxIn, TxOut};
+use crate::messages::{OutPoint, TxOut};
 use crate::script::{op_codes, Script};
 use crate::util::{var_int, Error, Hash256, Result, sha256d};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -9,11 +9,16 @@ use secp256k1::ecdsa::Signature;
 use smallvec::SmallVec;
 use std::io::{Cursor, Read, Write};
 
+/// Signs all of the outputs
 pub const SIGHASH_ALL: u8 = 0x01;
+/// Sign none of the outputs so that they may be spent anywhere
 pub const SIGHASH_NONE: u8 = 0x02;
+/// Sign only the output paired with the input
 pub const SIGHASH_SINGLE: u8 = 0x03;
-pub const SIGHASH_FORKID: u8 = 0x40;
+/// Sign only the input so others may add inputs to the transaction
 pub const SIGHASH_ANYONECANPAY: u8 = 0x80;
+/// Bitcoin Cash / SV sighash flag for use on outputs after the fork
+pub const SIGHASH_FORKID: u8 = 0x40;
 
 /// The 24-bit fork ID for Bitcoin Cash / SV
 const FORK_ID: u32 = 0;
@@ -27,13 +32,13 @@ const MAX_IO: usize = 1_000_000;
 ///
 /// # Arguments
 ///
-/// * `tx` - Spending transaction
- * `n_input` - Spending input index
- * `script_code` - The lock_script of the output being spent. This may be a subset of the
+/// * 'tx' - Spending transaction
+ * 'n_input' - Spending input index
+ * 'script_code' - The lock_script of the output being spent. This may be a subset of the
 lock_script if OP_CODESEPARATOR is used.
- * `satoshis` - The satoshi amount in the output being spent
- * `sighash_type` - Sighash flags
- * `cache` - Cache to store intermediate values for future sighash calls.
+ * 'satoshis' - The satoshi amount in the output being spent
+ * 'sighash_type' - Sighash flags
+ * 'cache' - Cache to store intermediate values for future sighash calls.
 pub fn sighash(
     tx: &Tx,
     n_input: usize,
@@ -98,7 +103,7 @@ fn bip143_sighash(
     // 2. Serialize hash of prevouts
     if !anyone_can_pay {
         if cache.hash_prevouts.is_none() {
-            let mut prev_outputs = SmallVec::<[u8; 1024]>::new();
+            let mut prev_outputs = Vec::with_capacity(OutPoint::SIZE * tx.inputs.len());
             for input in tx.inputs.iter() {
                 input.prev_output.write(&mut prev_outputs)?;
             }
@@ -112,9 +117,9 @@ fn bip143_sighash(
     // 3. Serialize hash of sequences
     if !anyone_can_pay && base_type != SIGHASH_SINGLE && base_type != SIGHASH_NONE {
         if cache.hash_sequence.is_none() {
-            let mut sequences = SmallVec::<[u8; 1024]>::new();
+            let mut sequences = Vec::with_capacity(4 * tx.inputs.len());
             for tx_in in tx.inputs.iter() {
-                sequences.extend_from_slice(&tx_in.sequence.to_le_bytes());
+                sequences.write_u32::<LittleEndian>(tx_in.sequence)?;
             }
             cache.hash_sequence = Some(sha256d(&sequences));
         }
@@ -143,7 +148,7 @@ fn bip143_sighash(
             for tx_out in tx.outputs.iter() {
                 size += tx_out.size();
             }
-            let mut outputs = SmallVec::<[u8; 1024]>::new();
+            let mut outputs = Vec::with_capacity(size);
             for tx_out in tx.outputs.iter() {
                 tx_out.write(&mut outputs)?;
             }
@@ -151,7 +156,7 @@ fn bip143_sighash(
         }
         s.extend_from_slice(&cache.hash_outputs.unwrap().0);
     } else if base_type == SIGHASH_SINGLE && n_input < tx.outputs.len() {
-        let mut outputs = SmallVec::<[u8; 1024]>::new();
+        let mut outputs = Vec::with_capacity(tx.outputs[n_input].size());
         tx.outputs[n_input].write(&mut outputs)?;
         s.extend_from_slice(&sha256d(&outputs).0);
     } else {
@@ -162,8 +167,7 @@ fn bip143_sighash(
     s.extend_from_slice(&tx.lock_time.to_le_bytes());
 
     // 10. Serialize hash type
-    let sighash = (FORK_ID << 8) | sighash_type as u32;
-    s.extend_from_slice(&sighash.to_le_bytes());
+    s.extend_from_slice(&((FORK_ID << 8) | sighash_type as u32).to_le_bytes());
 
     Ok(sha256d(&s))
 }
@@ -181,12 +185,12 @@ fn legacy_sighash(
         return Err(Error::BadArgument("input out of tx_in range".to_string()));
     }
 
-    let mut s = SmallVec::<[u8; 1024]>::new();
+    let mut s = Vec::with_capacity(tx.size());
     let base_type = sighash_type & 31;
     let anyone_can_pay = sighash_type & SIGHASH_ANYONECANPAY != 0;
 
     // Remove all instances of OP_CODESEPARATOR from the script_code
-    let mut sub_script = Vec::new();
+    let mut sub_script = Vec::with_capacity(script_code.len());
     let mut i = 0;
     while i < script_code.len() {
         let next = next_op(i, script_code);
@@ -197,7 +201,7 @@ fn legacy_sighash(
     }
 
     // Serialize the version
-    s.extend_from_slice(&tx.version.to_le_bytes());
+    s.write_u32::<LittleEndian>(tx.version)?;
 
     // Serialize the inputs
     let n_inputs = if anyone_can_pay { 1 } else { tx.inputs.len() };
@@ -247,75 +251,87 @@ fn legacy_sighash(
     }
 
     // Serialize the lock time
-    s.extend_from_slice(&tx.lock_time.to_le_bytes());
+    s.write_u32::<LittleEndian>(tx.lock_time)?;
 
     // Append the sighash_type and finally double hash the result
-    s.extend_from_slice(&sighash_type.to_le_bytes());
+    s.write_u32::<LittleEndian>(sighash_type as u32)?;
     Ok(sha256d(&s))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::messages::{OutPoint, TxIn, TxOut};
-    use crate::script::{op_codes, Script};
-    use crate::util::hash160::hash160;
-    use secp256k1::{PublicKey, Secp256k1, SecretKey};
+    use crate::address::decode_address;
+    use crate::messages::{OutPoint, TxIn};
+    use crate::script::op_codes::*;
+    use crate::transaction::p2pkh;
+    use hex;
 
     #[test]
-    fn sighash_none() {
-        let private_key = [1; 32];
-        let secp = Secp256k1::new();
-        let secret_key = SecretKey::from_slice(&private_key).unwrap();
-        let pk = PublicKey::from_secret_key(&secp, &secret_key);
-        let pkh = hash160(&pk.serialize());
-
-        let mut lock_script = Script::new();
-        lock_script.append(op_codes::OP_DUP);
-        lock_script.append(op_codes::OP_HASH160);
-        lock_script.append_data(&pkh.0);
-        lock_script.append(op_codes::OP_EQUALVERIFY);
-        lock_script.append(op_codes::OP_CHECKSIG);
-
-        let tx1 = Tx {
-            version: 1,
-            inputs: vec![],
-            outputs: vec![TxOut {
-                satoshis: 10,
-                lock_script: lock_script.clone(),
+    fn bip143_sighash_test() -> Result<()> {
+        let lock_script = hex::decode("76a91402b74813b047606b4b3fbdfb1a6e8e053fdb8dab88ac")?;
+        let addr = "mfmKD4cP6Na7T8D87XRSiR7shA1HNGSaec";
+        let (_version, hash160_vec) = decode_address(addr)?;
+        let hash160_array: [u8; 20] = hash160_vec.try_into().map_err(|_| Error::BadData("Invalid hash160 length".to_string()))?;
+        let tx = Tx {
+            version: 2,
+            inputs: vec![TxIn {
+                prev_output: OutPoint {
+                    hash: Hash256::decode(
+                        "f671dc000ad12795e86b59b27e0c367d9b026bbd4141c227b9285867a53bb6f7",
+                    )?,
+                    index: 0,
+                },
+                unlock_script: Script(vec![]),
+                sequence: 0,
             }],
+            outputs: vec![
+                TxOut {
+                    satoshis: 100,
+                    lock_script: p2pkh::create_lock_script(&hash160_array.into()),
+                },
+                TxOut {
+                    satoshis: 259899900,
+                    lock_script: p2pkh::create_lock_script(&hash160_array.into()),
+                },
+            ],
             lock_time: 0,
         };
+        let mut cache = SigHashCache::new();
+        let sighash_type = SIGHASH_ALL | SIGHASH_FORKID;
+        let sighash = bip143_sighash(&tx, 0, &lock_script, 260000000, sighash_type, &mut cache)?;
+        let expected = "1e2121837829018daf3aeadab76f1a542c49a3600ded7bd74323ee74ce0d840c";
+        assert_eq!(sighash.encode(), expected);
+        assert!(cache.hash_prevouts.is_some());
+        assert!(cache.hash_sequence.is_some());
+        assert!(cache.hash_outputs.is_some());
+        Ok(())
+    }
 
-        let tx2 = Tx {
+    #[test]
+    fn legacy_sighash_test() -> Result<()> {
+        let lock_script = hex::decode("76a914d951eb562f1ff26b6cbe89f04eda365ea6bd95ce88ac")?;
+        let tx = Tx {
             version: 1,
             inputs: vec![TxIn {
                 prev_output: OutPoint {
-                    hash: tx1.hash(),
+                    hash: Hash256::decode(
+                        "bf6c1139ea01ca054b8d00aa0a088daaeab4f3b8e111626c6be7d603a9dd8dff",
+                    )?,
                     index: 0,
                 },
                 unlock_script: Script(vec![]),
                 sequence: 0xffffffff,
             }],
-            outputs: vec![],
+            outputs: vec![TxOut {
+                satoshis: 49990000,
+                lock_script: Script(hex::decode("76a9147865b0b301119fc3eadc7f3406ff1339908e46d488ac")?.into()),
+            }],
             lock_time: 0,
         };
-
-        let mut cache = SigHashCache::new();
-        let hash_none = sighash(
-            &tx2,
-            0,
-            &lock_script.0,
-            10,
-            SIGHASH_NONE | SIGHASH_FORKID,
-            &mut cache,
-        )
-        .unwrap();
-        assert_eq!(
-            hash_none.encode(),
-            "5a4d46f5aabb2a3d3fd16ac22f1f2fb4d3ab9c7f18195e9e37e27c08f5d6a5c6"
-        );
+        let sighash = legacy_sighash(&tx, 0, &lock_script, SIGHASH_ALL)?;
+        let expected = "ad16084eccf26464a84c5ee2f8b96b4daff9a3154ac3c1b320346aed042abe57";
+        assert_eq!(sighash.encode(), expected);
+        Ok(())
     }
-
-    // ... (all other tests remain the same: sighash_single, sighash_none_anyone, sighash_single_anyone, sighash_all, sighash_all_anyone)
 }
