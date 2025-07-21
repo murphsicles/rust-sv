@@ -1,4 +1,5 @@
 use crate::messages::node_addr_ex::NodeAddrEx;
+use crate::messages::message::Payload;
 use crate::util::{var_int, Error, Result, Serializable};
 use std::fmt;
 use std::io;
