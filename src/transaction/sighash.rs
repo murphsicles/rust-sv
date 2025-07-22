@@ -1,13 +1,11 @@
 //! Transaction sighash helpers
 
 use crate::messages::{OutPoint, Tx, TxIn, TxOut};
-use crate::script::{op_codes, Script};
+use crate::script::{op_codes, Script, next_op};
 use crate::util::{var_int, Error, Hash256, Result, sha256d};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use secp256k1::{Message, Secp256k1, SecretKey};
-use secp256k1::ecdsa::Signature;
 use smallvec::SmallVec;
-use std::io::{Cursor, Read, Write};
+use std::io::Write;
 
 /// Signs all of the outputs
 pub const SIGHASH_ALL: u8 = 0x01;
