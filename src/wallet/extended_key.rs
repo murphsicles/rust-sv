@@ -115,7 +115,7 @@ impl ExtendedKey {
         } else if is_private {
             let pubkey = PublicKey::from_secret_key(secp, &SecretKey::from_slice(&self.key()[1..33])?);
             eprintln!("Using public key: {} (len: {})", hex::encode(pubkey.serialize()), pubkey.serialize().len());
-            hmac_input = vec![0u8; 38]; // Public key is 33 bytes
+            hmac_input = vec![0u8; 37]; // Public key is 33 bytes
             hmac_input[0..33].copy_from_slice(&pubkey.serialize());
             hmac_input[33..37].copy_from_slice(&index.to_be_bytes());
             eprintln!("HMAC input bytes: {:?} (len: {})", hmac_input, hmac_input.len());
@@ -124,7 +124,7 @@ impl ExtendedKey {
                 return Err(Error::InvalidOperation("Hardened derivation not supported for public keys".to_string()));
             }
             eprintln!("Using public key: {} (len: {})", hex::encode(self.key()), self.key().len());
-            hmac_input = vec![0u8; 38]; // Public key is 33 bytes
+            hmac_input = vec![0u8; 37]; // Public key is 33 bytes
             hmac_input[0..33].copy_from_slice(&self.key());
             hmac_input[33..37].copy_from_slice(&index.to_be_bytes());
             eprintln!("HMAC input bytes: {:?} (len: {})", hmac_input, hmac_input.len());
