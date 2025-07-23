@@ -24,14 +24,14 @@ Add `rust-sv` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-sv = "0.4.1"
+sv = "0.4.3"
 ```
 
 Or use the latest development version:
 
 ```toml
 [dependencies]
-sv = { git = "https://github.com/murphsicles/rust-sv", branch = "master" }
+sv = { git = "https://github.com/murphsicles/rust-sv", branch = "main" }
 ```
 
 ### System Requirements
