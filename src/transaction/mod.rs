@@ -42,7 +42,7 @@ pub fn generate_signature(
 ) -> Result<Vec<u8>> {
     let secp = Secp256k1::signing_only();
     let message = Message::from_digest(sighash.0);
-    let secret_key = SecretKey::from_slice(private_key)?;
+    let secret_key = SecretKey::from_byte_array(private_key)?;
     let mut signature: Signature = secp.sign_ecdsa(message, &secret_key); // Fixed: removed & from message
     signature.normalize_s();
     let sig: SerializedSignature = signature.serialize_der();
