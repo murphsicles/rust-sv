@@ -113,7 +113,7 @@ impl ExtendedKey {
             hmac_input[33..37].copy_from_slice(&index.to_be_bytes());
             eprintln!("HMAC input bytes: {:?} (len: {})", hmac_input, hmac_input.len());
         } else if is_private {
-            let pubkey = PublicKey::from_secret_key(secp, &SecretKey::from_slice(&self.key()[1..33])?);
+            let pubkey = PublicKey::from_secret_key(secp, &SecretKey::from_byte_array(&self.key()[1..33])?);
             eprintln!("Using public key: {} (len: {})", hex::encode(pubkey.serialize()), pubkey.serialize().len());
             hmac_input = vec![0u8; 37]; // Public key is 33 bytes
             hmac_input[0..33].copy_from_slice(&pubkey.serialize());
