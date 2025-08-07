@@ -155,7 +155,7 @@ impl ExtendedKey {
         child_key.0[4] = self.depth().wrapping_add(1);
         // Compute parent fingerprint
         let parent_pubkey = if is_private {
-            PublicKey::from_secret_key(secp, &SecretKey::from_slice(&self.key()[1..33])?)
+            PublicKey::from_secret_key(secp, &SecretKey::from_byte_array(&self.key()[1..33])?)
         } else {
             PublicKey::from_slice(&self.key())?
         };
@@ -168,8 +168,8 @@ impl ExtendedKey {
 
         // Compute child key
         if is_private {
-            let parent_secret = SecretKey::from_slice(&self.key()[1..33])?;
-            let tweak = SecretKey::from_slice(&il).map_err(|e| Error::BadData(format!("Invalid tweak: {}", e)))?;
+            let parent_secret = SecretKey::from_byte_array(&self.key()[1..33])?;
+            let tweak = SecretKey::from_byte_array(&il).map_err(|e| Error::BadData(format!("Invalid tweak: {}", e)))?;
             let child_secret = parent_secret.add_tweak(&tweak.into()).map_err(|e| Error::BadData(format!("Tweak failed: {}", e)))?;
             child_key.0[45] = 0; // Private key prefix
             child_key.0[46..78].copy_from_slice(&child_secret[..]);
@@ -178,7 +178,7 @@ impl ExtendedKey {
             eprintln!("Child private key: {}", hex::encode(&child_secret[..]));
         } else {
             let pubkey = PublicKey::from_slice(&self.key())?;
-            let tweak = SecretKey::from_slice(&il).map_err(|e| Error::BadData(format!("Invalid tweak: {}", e)))?;
+            let tweak = SecretKey::from_byte_array(&il).map_err(|e| Error::BadData(format!("Invalid tweak: {}", e)))?;
             let child_pubkey = pubkey.add_exp_tweak(secp, &tweak.into()).map_err(|e| Error::BadData(format!("Tweak failed: {}", e)))?;
             child_key.0[45..78].copy_from_slice(&child_pubkey.serialize());
         }
@@ -242,7 +242,7 @@ pub fn extended_key_from_seed(seed: &[u8], network: Network) -> Result<ExtendedK
         return Err(Error::BadData(format!("Invalid HMAC output length: {}", result_bytes.len())));
     }
 
-    let secret_key = SecretKey::from_slice(&result_bytes[0..32])?;
+    let secret_key = SecretKey::from_byte_array(&result_bytes[0..32])?;
     let chain_code = &result_bytes[32..64];
 
     let mut key = ExtendedKey([0; 78]);
