@@ -6,7 +6,7 @@ repository = "https://github.com/murphsicles/rust-sv"
 authors = ["Dr. Roy Murphy", "Brenton Gunning"]
 keywords = ["bitcoin", "sv", "cash", "crypto"]
 license = "MIT"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 base58 = "0.2.0"
