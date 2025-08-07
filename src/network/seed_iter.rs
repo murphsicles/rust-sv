@@ -1,6 +1,6 @@
 use dns_lookup::lookup_host;
 use log::{error, info};
-use rand::{thread_rng, Rng};
+use rand::{thread_rng, seq::SliceRandom, Rng};
 use std::net::IpAddr;
 
 #[derive(Clone, Debug)]
@@ -37,12 +37,14 @@ impl<'a> Iterator for SeedIter<'a> {
                 let i = (self.seed_index + self.random_offset) % self.seeds.len();
                 info!("Looking up DNS: {}", self.seeds[i]);
                 match lookup_host(&self.seeds[i]) {
-                    Ok(ip_vec) => {
+                    Ok(mut ip_vec) => {
                         if ip_vec.is_empty() {
                             error!("DNS lookup for {} returned no IPs", self.seeds[i]);
                             self.seed_index += 1;
                             continue;
                         }
+                        // Shuffle for better randomization
+                        ip_vec.shuffle(&mut thread_rng());
                         self.nodes = ip_vec;
                         self.node_index = 0;
                     }
@@ -54,8 +56,7 @@ impl<'a> Iterator for SeedIter<'a> {
                 }
             }
             if self.node_index < self.nodes.len() {
-                let i = (self.node_index + self.random_offset) % self.nodes.len();
-                let ip = self.nodes[i];
+                let ip = self.nodes[self.node_index];
                 self.node_index += 1;
                 if self.node_index >= self.nodes.len() {
                     self.nodes.clear();
@@ -88,7 +89,6 @@ mod tests {
     fn test_seed_iter_invalid_seed() {
         let seeds = vec!["invalid.dns.seed".to_string()];
         let mut iter = SeedIter::new(&seeds, 8333);
-        // Should not panic or hang, just return None
         assert_eq!(iter.next(), None);
     }
 
