@@ -1,6 +1,6 @@
 use dns_lookup::lookup_host;
 use log::{error, info};
-use rand::{thread_rng, seq::SliceRandom, Rng};
+use rand::{rng, seq::SliceRandom, Rng};
 use std::net::IpAddr;
 
 #[derive(Clone, Debug)]
@@ -15,8 +15,8 @@ pub struct SeedIter<'a> {
 
 impl<'a> SeedIter<'a> {
     pub fn new(seeds: &'a [String], port: u16) -> Self {
-        let mut rng = thread_rng();
-        let random_offset = rng.gen_range(0..100);
+        let mut rng = rng();
+        let random_offset = rng.random_range(0..100);
         SeedIter {
             port,
             seeds,
@@ -37,14 +37,14 @@ impl<'a> Iterator for SeedIter<'a> {
                 let i = (self.seed_index + self.random_offset) % self.seeds.len();
                 info!("Looking up DNS: {}", self.seeds[i]);
                 match lookup_host(&self.seeds[i]) {
-                    Ok(mut ip_vec) => {
+                    Ok(ip_iter) => {
+                        let mut ip_vec: Vec<IpAddr> = ip_iter.collect();
                         if ip_vec.is_empty() {
                             error!("DNS lookup for {} returned no IPs", self.seeds[i]);
                             self.seed_index += 1;
                             continue;
                         }
-                        // Shuffle for better randomization
-                        ip_vec.shuffle(&mut thread_rng());
+                        ip_vec.shuffle(&mut rng());
                         self.nodes = ip_vec;
                         self.node_index = 0;
                     }
