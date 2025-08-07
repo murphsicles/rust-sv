@@ -1,6 +1,6 @@
 [package]
 name = "sv"
-version = "0.4.0"
+version = "0.4.5"
 description = "A Rust library for working with the BSV blockchain."
 repository = "https://github.com/murphsicles/rust-sv"
 authors = ["Dr. Roy Murphy", "Brenton Gunning"]
