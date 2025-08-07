@@ -228,7 +228,7 @@ impl Peer {
     /// Gets the version message received during the handshake
     pub fn version(&self) -> Result<Version> {
         match &*self.version.lock().unwrap() {
-            Some(ref version) => Ok(version.clone()),
+            Some(version) => Ok(version.clone()),
             None => Err(Error::IllegalState("Not connected".to_string())),
         }
     }
@@ -397,7 +397,7 @@ impl Peer {
 
     fn strong_self(&self) -> Option<Arc<Peer>> {
         match &*self.weak_self.lock().unwrap() {
-            Some(ref weak_peer) => weak_peer.upgrade(),
+            Some(weak_peer) => weak_peer.upgrade(),
             None => None,
         }
     }
