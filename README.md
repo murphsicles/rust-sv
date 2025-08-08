@@ -24,7 +24,7 @@ Add `rust-sv` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-sv = "0.4.3"
+sv = "0.5.1"
 ```
 
 Or use the latest development version:
