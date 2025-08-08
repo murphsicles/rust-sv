@@ -24,7 +24,8 @@ Add `rust-sv` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-sv = "0.5.1"
+[dependencies]
+sv = { git = "https://github.com/murphsicles/rust-sv", tag = "0.5.1" }
 ```
 
 Or use the latest development version:
@@ -36,7 +37,7 @@ sv = { git = "https://github.com/murphsicles/rust-sv", branch = "main" }
 
 ### System Requirements
 
-- Rust: Stable (1.82 or later)
+- Rust: Stable (1.86 or later)
 - Dependencies: `libzmq3-dev`, `libpq-dev` (for projects like `RustBus`)
 - OS: Linux, macOS, or Windows (Linux recommended for production)
 
