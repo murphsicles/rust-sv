@@ -24,7 +24,7 @@ Add `rust-sv` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-sv = "0.5.2"
+sv = { git = "https://github.com/murphsicles/rust-sv", tag = "0.5.1" }
 ```
 
 Or use the latest development version:
