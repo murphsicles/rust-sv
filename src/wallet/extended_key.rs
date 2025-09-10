@@ -1,11 +1,11 @@
 use crate::network::Network;
-use crate::util::{sha256d, Error, Result, Serializable};
-use base58::{ToBase58, FromBase58};
-use ring::digest::{digest, SHA256};
+use crate::util::{Error, Result, Serializable, sha256d};
+use base58::{FromBase58, ToBase58};
+use ring::digest::{SHA256, digest};
 use ring::hmac as ring_hmac;
-use secp256k1::{Secp256k1, SecretKey, PublicKey};
-use std::io::{self, Read, Write};
+use secp256k1::{PublicKey, Secp256k1, SecretKey};
 use std::fmt;
+use std::io::{self, Read, Write};
 
 // Version bytes for extended keys
 pub const MAINNET_PRIVATE_EXTENDED_KEY: [u8; 4] = [0x04, 0x88, 0xAD, 0xE4]; // xprv
@@ -95,7 +95,11 @@ impl ExtendedKey {
     }
 
     /// Derives a child key (hardened or normal)
-    pub fn derive_child(&self, index: u32, secp: &Secp256k1<secp256k1::All>) -> Result<ExtendedKey> {
+    pub fn derive_child(
+        &self,
+        index: u32,
+        secp: &Secp256k1<secp256k1::All>,
+    ) -> Result<ExtendedKey> {
         let is_private = self.is_private();
         let is_hardened = index >= HARDENED_KEY;
 
@@ -104,46 +108,91 @@ impl ExtendedKey {
         if is_private && is_hardened {
             hmac_input[0] = 0;
             let private_key = &self.key()[1..33]; // Private key without prefix
-            eprintln!("Full key data: {} (len: {})", hex::encode(self.key()), self.key().len());
-            eprintln!("Private key bytes: {:?} (len: {})", private_key, private_key.len());
+            eprintln!(
+                "Full key data: {} (len: {})",
+                hex::encode(self.key()),
+                self.key().len()
+            );
+            eprintln!(
+                "Private key bytes: {:?} (len: {})",
+                private_key,
+                private_key.len()
+            );
             if private_key.len() != 32 {
-                return Err(Error::BadData(format!("Invalid private key length: {}", private_key.len())));
+                return Err(Error::BadData(format!(
+                    "Invalid private key length: {}",
+                    private_key.len()
+                )));
             }
             hmac_input[1..33].copy_from_slice(&private_key[..32]);
             hmac_input[33..37].copy_from_slice(&index.to_be_bytes());
-            eprintln!("HMAC input bytes: {:?} (len: {})", hmac_input, hmac_input.len());
+            eprintln!(
+                "HMAC input bytes: {:?} (len: {})",
+                hmac_input,
+                hmac_input.len()
+            );
         } else if is_private {
             let slice = &self.key()[1..33];
-            let array: [u8; 32] = slice.try_into().map_err(|_| Error::BadData("Invalid key length".to_string()))?;
+            let array: [u8; 32] = slice
+                .try_into()
+                .map_err(|_| Error::BadData("Invalid key length".to_string()))?;
             let pubkey = PublicKey::from_secret_key(secp, &SecretKey::from_byte_array(array)?);
-            eprintln!("Using public key: {} (len: {})", hex::encode(pubkey.serialize()), pubkey.serialize().len());
+            eprintln!(
+                "Using public key: {} (len: {})",
+                hex::encode(pubkey.serialize()),
+                pubkey.serialize().len()
+            );
             hmac_input = vec![0u8; 37]; // Public key is 33 bytes
             hmac_input[0..33].copy_from_slice(&pubkey.serialize());
             hmac_input[33..37].copy_from_slice(&index.to_be_bytes());
-            eprintln!("HMAC input bytes: {:?} (len: {})", hmac_input, hmac_input.len());
+            eprintln!(
+                "HMAC input bytes: {:?} (len: {})",
+                hmac_input,
+                hmac_input.len()
+            );
         } else {
             if is_hardened {
-                return Err(Error::InvalidOperation("Hardened derivation not supported for public keys".to_string()));
+                return Err(Error::InvalidOperation(
+                    "Hardened derivation not supported for public keys".to_string(),
+                ));
             }
-            eprintln!("Using public key: {} (len: {})", hex::encode(self.key()), self.key().len());
+            eprintln!(
+                "Using public key: {} (len: {})",
+                hex::encode(self.key()),
+                self.key().len()
+            );
             hmac_input = vec![0u8; 37]; // Public key is 33 bytes
             hmac_input[0..33].copy_from_slice(&self.key());
             hmac_input[33..37].copy_from_slice(&index.to_be_bytes());
-            eprintln!("HMAC input bytes: {:?} (len: {})", hmac_input, hmac_input.len());
+            eprintln!(
+                "HMAC input bytes: {:?} (len: {})",
+                hmac_input,
+                hmac_input.len()
+            );
         }
 
         // Compute input checksum
         let input_checksum = digest(&SHA256, &hmac_input);
-        eprintln!("HMAC input checksum: {}", hex::encode(input_checksum.as_ref()));
+        eprintln!(
+            "HMAC input checksum: {}",
+            hex::encode(input_checksum.as_ref())
+        );
 
         // Compute HMAC using ring
         let chain_code = self.chain_code();
         let hmac_key = ring_hmac::Key::new(ring_hmac::HMAC_SHA512, &chain_code);
         let result = ring_hmac::sign(&hmac_key, &hmac_input);
         let result_bytes = result.as_ref();
-        eprintln!("Raw HMAC result: {} (len: {})", hex::encode(result_bytes), result_bytes.len());
+        eprintln!(
+            "Raw HMAC result: {} (len: {})",
+            hex::encode(result_bytes),
+            result_bytes.len()
+        );
         if result_bytes.len() != 64 {
-            return Err(Error::BadData(format!("Invalid HMAC output length: {}", result_bytes.len())));
+            return Err(Error::BadData(format!(
+                "Invalid HMAC output length: {}",
+                result_bytes.len()
+            )));
         }
         let il: [u8; 32] = result_bytes[0..32].try_into().unwrap();
         let new_chain_code: [u8; 32] = result_bytes[32..64].try_into().unwrap();
@@ -158,12 +207,16 @@ impl ExtendedKey {
         // Compute parent fingerprint
         let parent_pubkey = if is_private {
             let slice = &self.key()[1..33];
-            let array: [u8; 32] = slice.try_into().map_err(|_| Error::BadData("Invalid key length".to_string()))?;
+            let array: [u8; 32] = slice
+                .try_into()
+                .map_err(|_| Error::BadData("Invalid key length".to_string()))?;
             PublicKey::from_secret_key(secp, &SecretKey::from_byte_array(array)?)
         } else {
             PublicKey::from_slice(&self.key())?
         };
-        let parent_fingerprint: [u8; 4] = sha256d(&parent_pubkey.serialize()).0[..4].try_into().unwrap();
+        let parent_fingerprint: [u8; 4] = sha256d(&parent_pubkey.serialize()).0[..4]
+            .try_into()
+            .unwrap();
         child_key.0[5..9].copy_from_slice(&parent_fingerprint);
         // Set child index
         child_key.0[9..13].copy_from_slice(&index.to_be_bytes());
@@ -173,10 +226,15 @@ impl ExtendedKey {
         // Compute child key
         if is_private {
             let slice = &self.key()[1..33];
-            let array: [u8; 32] = slice.try_into().map_err(|_| Error::BadData("Invalid key length".to_string()))?;
+            let array: [u8; 32] = slice
+                .try_into()
+                .map_err(|_| Error::BadData("Invalid key length".to_string()))?;
             let parent_secret = SecretKey::from_byte_array(array)?;
-            let tweak = SecretKey::from_byte_array(il).map_err(|e| Error::BadData(format!("Invalid tweak: {}", e)))?;
-            let child_secret = parent_secret.add_tweak(&tweak.into()).map_err(|e| Error::BadData(format!("Tweak failed: {}", e)))?;
+            let tweak = SecretKey::from_byte_array(il)
+                .map_err(|e| Error::BadData(format!("Invalid tweak: {}", e)))?;
+            let child_secret = parent_secret
+                .add_tweak(&tweak.into())
+                .map_err(|e| Error::BadData(format!("Tweak failed: {}", e)))?;
             child_key.0[45] = 0; // Private key prefix
             child_key.0[46..78].copy_from_slice(&child_secret[..]);
             eprintln!("Parent private key: {}", hex::encode(&self.key()[1..33]));
@@ -184,8 +242,11 @@ impl ExtendedKey {
             eprintln!("Child private key: {}", hex::encode(&child_secret[..]));
         } else {
             let pubkey = PublicKey::from_slice(&self.key())?;
-            let tweak = SecretKey::from_byte_array(il).map_err(|e| Error::BadData(format!("Invalid tweak: {}", e)))?;
-            let child_pubkey = pubkey.add_exp_tweak(secp, &tweak.into()).map_err(|e| Error::BadData(format!("Tweak failed: {}", e)))?;
+            let tweak = SecretKey::from_byte_array(il)
+                .map_err(|e| Error::BadData(format!("Invalid tweak: {}", e)))?;
+            let child_pubkey = pubkey
+                .add_exp_tweak(secp, &tweak.into())
+                .map_err(|e| Error::BadData(format!("Tweak failed: {}", e)))?;
             child_key.0[45..78].copy_from_slice(&child_pubkey.serialize());
         }
 
@@ -221,7 +282,8 @@ pub fn derive_extended_key(
     secp: &Secp256k1<secp256k1::All>,
 ) -> Result<ExtendedKey> {
     if path.is_empty() || path == "m" {
-        let seed = hex::decode(input).map_err(|_| Error::BadData("Invalid hex seed".to_string()))?;
+        let seed =
+            hex::decode(input).map_err(|_| Error::BadData("Invalid hex seed".to_string()))?;
         return extended_key_from_seed(&seed, network);
     }
 
@@ -233,7 +295,11 @@ pub fn derive_extended_key(
         let index: u32 = index_str
             .parse()
             .map_err(|_| Error::BadData("Invalid derivation index".to_string()))?;
-        let index = if is_hardened { index + HARDENED_KEY } else { index };
+        let index = if is_hardened {
+            index + HARDENED_KEY
+        } else {
+            index
+        };
         key = key.derive_child(index, secp)?;
     }
     Ok(key)
@@ -245,11 +311,16 @@ pub fn extended_key_from_seed(seed: &[u8], network: Network) -> Result<ExtendedK
     let result = ring_hmac::sign(&hmac_key, seed);
     let result_bytes = result.as_ref();
     if result_bytes.len() != 64 {
-        return Err(Error::BadData(format!("Invalid HMAC output length: {}", result_bytes.len())));
+        return Err(Error::BadData(format!(
+            "Invalid HMAC output length: {}",
+            result_bytes.len()
+        )));
     }
 
     let slice = &result_bytes[0..32];
-    let array: [u8; 32] = slice.try_into().map_err(|_| Error::BadData("Invalid key length".to_string()))?;
+    let array: [u8; 32] = slice
+        .try_into()
+        .map_err(|_| Error::BadData("Invalid key length".to_string()))?;
     let secret_key = SecretKey::from_byte_array(array)?;
     let chain_code = &result_bytes[32..64];
 
@@ -281,10 +352,14 @@ mod tests {
         let key = hex::decode("873dff81c02f525623fd1fe5167eac3a55a049de3d314bb42ee227ffed37d508")?;
         // Hardcoded 32-byte private key
         let private_key = [
-            232, 243, 46, 114, 61, 236, 244, 5, 26, 239, 172, 142, 44, 147, 201, 197,
-            178, 20, 49, 56, 23, 205, 176, 26, 20, 148, 185, 23, 200, 67, 107, 53,
+            232, 243, 46, 114, 61, 236, 244, 5, 26, 239, 172, 142, 44, 147, 201, 197, 178, 20, 49,
+            56, 23, 205, 176, 26, 20, 148, 185, 23, 200, 67, 107, 53,
         ];
-        eprintln!("Private key bytes: {:?} (len: {})", private_key, private_key.len());
+        eprintln!(
+            "Private key bytes: {:?} (len: {})",
+            private_key,
+            private_key.len()
+        );
         let index = 0x80000000u32; // Hardened index
         let mut data = vec![0u8; 37]; // Pre-allocate 37 bytes
         data[0] = 0;
@@ -296,13 +371,20 @@ mod tests {
 
         // Compute input checksum
         let input_checksum = digest(&SHA256, &data);
-        eprintln!("HMAC input checksum: {}", hex::encode(input_checksum.as_ref()));
+        eprintln!(
+            "HMAC input checksum: {}",
+            hex::encode(input_checksum.as_ref())
+        );
 
         // Compute HMAC with ring
         let hmac_key = ring_hmac::Key::new(ring_hmac::HMAC_SHA512, &key);
         let result = ring_hmac::sign(&hmac_key, &data[..37]);
         let result_bytes = result.as_ref();
-        eprintln!("HMAC result: {} (len: {})", hex::encode(result_bytes), result_bytes.len());
+        eprintln!(
+            "HMAC result: {} (len: {})",
+            hex::encode(result_bytes),
+            result_bytes.len()
+        );
 
         assert_eq!(
             hex::encode(result_bytes),
@@ -339,12 +421,23 @@ mod tests {
     #[test]
     fn test_pubkey() -> Result<()> {
         let secp = Secp256k1::new();
-        let private_key = hex::decode("e8f32e723decf4051aefac8e2c93c9c5b214313817cdb01a1494b917c8436b35")?;
-        eprintln!("Decoded private key: {:?} (len: {})", private_key, private_key.len());
+        let private_key =
+            hex::decode("e8f32e723decf4051aefac8e2c93c9c5b214313817cdb01a1494b917c8436b35")?;
+        eprintln!(
+            "Decoded private key: {:?} (len: {})",
+            private_key,
+            private_key.len()
+        );
         if private_key.len() != 32 {
-            return Err(Error::BadData(format!("Invalid private key length: {}", private_key.len())));
+            return Err(Error::BadData(format!(
+                "Invalid private key length: {}",
+                private_key.len()
+            )));
         }
-        let secret_key = SecretKey::from_slice(&private_key)?;
+        let array: [u8; 32] = private_key
+            .try_into()
+            .map_err(|_| Error::BadData("Invalid key length".to_string()))?;
+        let secret_key = SecretKey::from_byte_array(array)?;
         let public_key = PublicKey::from_secret_key(&secp, &secret_key);
         eprintln!("Public key: {}", hex::encode(public_key.serialize()));
         Ok(())
@@ -355,10 +448,14 @@ mod tests {
         let key = hex::decode("873dff81c02f525623fd1fe5167eac3a55a049de3d314bb42ee227ffed37d508")?;
         // Hardcoded 32-byte private key
         let private_key = [
-            232, 243, 46, 114, 61, 236, 244, 5, 26, 239, 172, 142, 44, 147, 201, 197,
-            178, 20, 49, 56, 23, 205, 176, 26, 20, 148, 185, 23, 200, 67, 107, 53,
+            232, 243, 46, 114, 61, 236, 244, 5, 26, 239, 172, 142, 44, 147, 201, 197, 178, 20, 49,
+            56, 23, 205, 176, 26, 20, 148, 185, 23, 200, 67, 107, 53,
         ];
-        eprintln!("Private key bytes: {:?} (len: {})", private_key, private_key.len());
+        eprintln!(
+            "Private key bytes: {:?} (len: {})",
+            private_key,
+            private_key.len()
+        );
         let index = 0x80000000u32;
         let mut data = vec![0u8; 37]; // Pre-allocate 37 bytes
         data[0] = 0;
@@ -370,13 +467,20 @@ mod tests {
 
         // Compute input checksum
         let input_checksum = digest(&SHA256, &data);
-        eprintln!("HMAC input checksum: {}", hex::encode(input_checksum.as_ref()));
+        eprintln!(
+            "HMAC input checksum: {}",
+            hex::encode(input_checksum.as_ref())
+        );
 
         // Compute HMAC with ring
         let hmac_key = ring_hmac::Key::new(ring_hmac::HMAC_SHA512, &key);
         let result = ring_hmac::sign(&hmac_key, &data[..37]);
         let result_bytes = result.as_ref();
-        eprintln!("HMAC result: {} (len: {})", hex::encode(result_bytes), result_bytes.len());
+        eprintln!(
+            "HMAC result: {} (len: {})",
+            hex::encode(result_bytes),
+            result_bytes.len()
+        );
 
         assert_eq!(
             hex::encode(result_bytes),

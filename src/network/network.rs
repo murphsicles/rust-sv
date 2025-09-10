@@ -42,7 +42,11 @@ impl NetworkConfig {
             Network::Testnet => 18333,
             Network::STN => 9333,
         };
-        Ok(Self { network, seeds, port })
+        Ok(Self {
+            network,
+            seeds,
+            port,
+        })
     }
 
     /// Converts an integer to a network type
@@ -179,7 +183,7 @@ impl NetworkConfig {
     }
 
     /// Creates a new DNS seed iterator
-    pub fn seed_iter(&self) -> SeedIter {
+    pub fn seed_iter(&'_ self) -> SeedIter<'_> {
         SeedIter::new(self.seeds(), self.port())
     }
 }
