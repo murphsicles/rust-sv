@@ -2,7 +2,7 @@
 
 A (legacy) Rust library for building Bitcoin SV applications and infrastructure, providing robust tools for P2P networking, address handling, transaction processing, and more.
 
-** Note: Active development of Rust SV has now ceased. Active development continues upon Rust SV"s replacement, [Nour](https://github.com/murphsicles/nour)
+** Note: Active development of Rust SV has now ceased. Active development continues upon Rust SV"s replacement, 💡[Nour](https://github.com/murphsicles/nour)
 
 [![Crates.io](https://img.shields.io/crates/v/sv.svg)](https://crates.io/crates/sv)
 [![Documentation](https://docs.rs/sv/badge.svg)](https://docs.rs/sv/)
